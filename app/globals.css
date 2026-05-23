@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+
+body {
+  @apply bg-luna-bg text-luna-text antialiased;
+  background-image:
+    radial-gradient(circle at 20% 10%, rgba(124, 58, 237, 0.24), transparent 35%),
+    radial-gradient(circle at 80% 20%, rgba(34, 211, 238, 0.16), transparent 30%),
+    radial-gradient(circle at 40% 80%, rgba(167, 139, 250, 0.14), transparent 35%);
+}
+
+.glass {
+  @apply bg-white/5 backdrop-blur-xl border border-white/10;
+}
+
+.scanline::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(transparent 50%, rgba(255,255,255,0.03) 51%);
+  background-size: 100% 5px;
+}
