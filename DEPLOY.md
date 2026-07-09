@@ -17,6 +17,8 @@ terminal do Forge funcionar dentro de um único serviço Railway.
    | Variável | Valor | Obrigatória |
    |---|---|---|
    | `NEXT_PUBLIC_LUNA_API_BASE_URL` | URL pública do backend LUNA (Gateway + `/api/chat`), ex.: `https://strong-celebration-production.up.railway.app/api` | Sim — sem isso o Forge cai no default `http://localhost:3001/api`, que não existe em produção |
+   | `FORGE_TERMINAL_TOKEN` | Um segredo gerado por você (ex.: `openssl rand -hex 32`) | Sim, para o terminal funcionar — sem essa variável, o servidor rejeita toda conexão em `/forge/terminal` (nenhum shell é criado). Ver "Segurança do terminal" abaixo |
+   | `NEXT_PUBLIC_FORGE_TERMINAL_TOKEN` | **O mesmo valor** de `FORGE_TERMINAL_TOKEN` | Sim, junto com a anterior — é como o browser envia o token na conexão WebSocket |
    | `FORGE_WORKING_DIRECTORY` | Diretório de trabalho do terminal/git-status locais do Forge | Não — default é o próprio diretório do deploy (`process.cwd()`), que já é o correto |
    | `PORT` | — | Não — o Railway injeta automaticamente; `server.ts` já lê `process.env.PORT` |
 
@@ -37,6 +39,23 @@ terminal do Forge funcionar dentro de um único serviço Railway.
   comandos reais.
 - Painel de Contexto mostra branch/último commit reais (lidos do próprio
   checkout do deploy, via `/api/forge/git-status`).
+
+## Segurança do terminal
+
+O terminal do Forge executa comandos reais no processo do servidor — sem
+nenhum controle de acesso, qualquer um que alcançasse a URL pública do
+Railway poderia abrir um shell interativo (achado real de revisão de
+código, corrigido antes do primeiro deploy). Em produção
+(`NODE_ENV=production`), o servidor só aceita a conexão WebSocket se o
+client enviar um token que bate com `FORGE_TERMINAL_TOKEN` — sem essa
+variável configurada, o terminal fica **desabilitado por padrão**.
+
+Isto não é autenticação real (o token também fica no bundle JS enviado ao
+browser, via `NEXT_PUBLIC_FORGE_TERMINAL_TOKEN`) — é o controle mínimo
+apropriado para este MVP: impede bots/scanners automatizados, exige leitura
+deliberada do bundle para extrair o segredo. Trate a URL de produção e o
+token como informação sensível. Autenticação real do Forge (login, sessão)
+é dívida registrada no roadmap, não implementada aqui.
 
 ## Limitação conhecida deste ambiente de desenvolvimento
 

@@ -1,5 +1,55 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import type { IncomingMessage } from "node:http";
 import type { WebSocket, WebSocketServer } from "ws";
+
+/**
+ * Gate do terminal (revisão de código, achado P1): sem isso, qualquer
+ * conexão que alcançasse `/forge/terminal` no serviço público ganhava um
+ * shell interativo sem nenhuma checagem — execução de comando arbitrário
+ * para qualquer um que soubesse a URL. Em desenvolvimento local (`isDev`,
+ * ambiente confiável — só o operador tem acesso à porta), segue liberado.
+ * Em produção, só aceita a conexão com um token que bate com
+ * `expectedToken` (`FORGE_TERMINAL_TOKEN`) — sem essa variável configurada,
+ * o terminal fica desabilitado por padrão (nenhum shell é criado).
+ *
+ * Não é autenticação real (o token, quando configurado, também é exposto ao
+ * client via `NEXT_PUBLIC_FORGE_TERMINAL_TOKEN` — ver DEPLOY.md) — é o
+ * controle mínimo apropriado para este MVP: impede bots/scanners
+ * automatizados, exige leitura deliberada do bundle do client para extrair
+ * o segredo. Autenticação real do Forge é dívida registrada, não
+ * implementada aqui.
+ */
+export function verifyTerminalClient(
+  isDev: boolean,
+  expectedToken: string | undefined,
+  requestUrl: string | undefined,
+): { allowed: true } | { allowed: false; code: number; message: string } {
+  if (isDev) return { allowed: true };
+
+  if (!expectedToken) {
+    return { allowed: false, code: 503, message: "Forge terminal is disabled — FORGE_TERMINAL_TOKEN is not configured" };
+  }
+
+  const providedToken = new URL(requestUrl ?? "", "http://internal").searchParams.get("token");
+  if (providedToken === expectedToken) return { allowed: true };
+
+  return { allowed: false, code: 401, message: "Unauthorized" };
+}
+
+/** Adapta `verifyTerminalClient` para a assinatura `verifyClient` da `ws` (usada em server.ts). */
+export function createTerminalClientVerifier(isDev: boolean) {
+  return (
+    info: { req: IncomingMessage },
+    callback: (result: boolean, code?: number, message?: string) => void,
+  ): void => {
+    const result = verifyTerminalClient(isDev, process.env.FORGE_TERMINAL_TOKEN, info.req.url);
+    if (result.allowed) {
+      callback(true);
+    } else {
+      callback(false, result.code, result.message);
+    }
+  };
+}
 
 /**
  * Plain command execution over a spawned shell — no automation, no agent

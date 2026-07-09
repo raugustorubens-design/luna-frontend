@@ -88,4 +88,19 @@ assert.doesNotMatch(
   `Context Panel must never read markdown/files directly — that dependency was eliminated in Forge MVP-02 (found in ${contextPanelPath})`,
 );
 
+// ---- Terminal WebSocket (security review finding, P1): must stay gated ----
+const serverSource = readFileSync(join(root, "server.ts"), "utf8");
+assert.match(
+  serverSource,
+  /verifyClient/,
+  "server.ts must gate the terminal WebSocket upgrade (verifyClient) — regression guard for the unauthenticated-shell finding",
+);
+const terminalServerPath = "lib/forge/terminal-server.ts";
+const terminalServerSource = readFileSync(join(root, terminalServerPath), "utf8");
+assert.match(
+  terminalServerSource,
+  /FORGE_TERMINAL_TOKEN|verifyTerminalClient/,
+  `${terminalServerPath} must keep the terminal token check — regression guard for the unauthenticated-shell finding`,
+);
+
 console.log(`Constitution checks passed (${sourceFiles.length} files scanned).`);

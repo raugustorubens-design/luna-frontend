@@ -144,10 +144,18 @@ export async function fetchOrganismContext(): Promise<OrganismContext> {
   return parseJsonOrThrow<OrganismContext>(response);
 }
 
+/**
+ * `NEXT_PUBLIC_FORGE_TERMINAL_TOKEN` deve ser igual ao `FORGE_TERMINAL_TOKEN`
+ * do servidor (ver server.ts) — em produção, o servidor rejeita a conexão
+ * sem esse token (nenhum shell é criado). Em desenvolvimento local o
+ * servidor não exige token, então isto é opcional aqui.
+ */
 export function terminalWebSocketUrl(): string {
   if (typeof window === "undefined") return "";
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}/forge/terminal`;
+  const token = process.env.NEXT_PUBLIC_FORGE_TERMINAL_TOKEN;
+  const query = token ? `?token=${encodeURIComponent(token)}` : "";
+  return `${protocol}//${window.location.host}/forge/terminal${query}`;
 }
 
 // ---- Filesystem capabilities (Explorer/Editor) ----

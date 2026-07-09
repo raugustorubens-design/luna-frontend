@@ -13,7 +13,7 @@
 import { createServer } from "node:http";
 import next from "next";
 import { WebSocketServer } from "ws";
-import { attachTerminal } from "./lib/forge/terminal-server";
+import { attachTerminal, createTerminalClientVerifier } from "./lib/forge/terminal-server";
 
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT ?? 3000);
@@ -25,7 +25,9 @@ const handle = app.getRequestHandler();
 app.prepare().then(() => {
   const server = createServer((req, res) => handle(req, res));
 
-  const wss = new WebSocketServer({ server, path: "/forge/terminal" });
+  // Gate do terminal (achado de revisão de código, P1) — ver
+  // lib/forge/terminal-server.ts para o motivo e o comportamento completo.
+  const wss = new WebSocketServer({ server, path: "/forge/terminal", verifyClient: createTerminalClientVerifier(dev) });
   attachTerminal(wss, workingDirectory);
 
   server.listen(port, () => {
