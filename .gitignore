@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+*.tsbuildinfo
+
+# Monaco assets vendored from node_modules at install/build time (see scripts/copy-monaco-assets.mjs)
+public/monaco-editor/
+
+# Env files
+.env*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

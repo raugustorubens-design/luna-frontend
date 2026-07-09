@@ -1,0 +1,11 @@
+{
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "pnpm install && pnpm run build"
+  },
+  "deploy": {
+    "startCommand": "pnpm run start",
+    "healthcheckPath": "/",
+    "healthcheckTimeout": 100
+  }
+}
