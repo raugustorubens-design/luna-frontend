@@ -1,5 +1,6 @@
 import "./globals.css";
 import type { Metadata } from "next";
+import { ModeSwitcher } from "@/components/mode-switcher";
 
 export const metadata: Metadata = {
   title: "LUNA Cognitive OS",
@@ -9,7 +10,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR">
-      <body>{children}</body>
+      <body>
+        <ModeSwitcher />
+        {children}
+      </body>
     </html>
   );
 }

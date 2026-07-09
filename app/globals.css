@@ -4,6 +4,40 @@
 
 :root { color-scheme: dark; }
 
+/*
+ * Tokens estruturais do Forge (Dev Mode) — portados de forge/apps/web/src/index.css
+ * (monorepo `luna`). Usados pelos componentes shadcn/radix (bg-primary, border-border
+ * etc). Não afetam o User Mode, que usa a paleta `luna.*` do tailwind.config.ts direto.
+ */
+:root {
+  --background: 220 14% 6%;
+  --foreground: 210 20% 92%;
+  --muted: 220 12% 14%;
+  --muted-foreground: 215 12% 65%;
+  --border: 220 12% 20%;
+  --ring: 190 80% 55%;
+  --primary: 190 80% 55%;
+  --primary-foreground: 220 20% 8%;
+  --secondary: 260 40% 60%;
+  --secondary-foreground: 220 20% 8%;
+  --destructive: 0 62% 50%;
+  --destructive-foreground: 210 20% 96%;
+  --radius: 0.5rem;
+
+  /* Identidade visual da LUNA, isolada — mesma paleta ciano/violeta do User Mode. */
+  --luna-cyan: 190 82% 60%;
+  --luna-violet: 258 70% 68%;
+  --luna-glow: 0 0 24px hsl(var(--luna-cyan) / 0.25);
+}
+
+.forge-brand-glow {
+  box-shadow: var(--luna-glow);
+}
+
+.forge-accent-text {
+  color: hsl(var(--luna-cyan));
+}
+
 body {
   @apply bg-luna-bg text-luna-text antialiased;
   background-image:
