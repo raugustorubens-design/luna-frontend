@@ -116,6 +116,34 @@ export async function fetchLocalGitStatus(): Promise<LocalGitStatus> {
   return parseJsonOrThrow<LocalGitStatus>(response);
 }
 
+// ---- Context Hub (Forge MVP-02) ----
+
+export interface OrganismContext {
+  project: string;
+  mission: string;
+  currentMvp: string;
+  architecturalState: string;
+  organismState: string;
+  cognitiveIndex: string[];
+  checkpoints: Array<{ id?: string | number; summary: string; at?: string }>;
+  inferences: string[];
+  roadmap: string[];
+  activeRepositories: string[];
+  activeSystems: string[];
+  providers: Array<{ id: string; configured: boolean }>;
+}
+
+/**
+ * Único ponto de contato do Forge com o Context Hub — nunca lê
+ * LUNA_CONTEXT.md (ou qualquer markdown) diretamente. `GET /api/context` é
+ * uma rota irmã do Gateway no backend (mesmo padrão de `/api/chat`), não uma
+ * capability — ver decisão registrada em LUNA_CONTEXT.md.
+ */
+export async function fetchOrganismContext(): Promise<OrganismContext> {
+  const response = await fetch(`${LUNA_API_BASE_URL}/context`);
+  return parseJsonOrThrow<OrganismContext>(response);
+}
+
 export function terminalWebSocketUrl(): string {
   if (typeof window === "undefined") return "";
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";

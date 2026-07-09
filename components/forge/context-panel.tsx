@@ -1,56 +1,40 @@
 "use client";
 
-// Portado de forge/apps/web/src/components/context-panel/ContextPanel.tsx (monorepo `luna`).
+// Forge MVP-02: este painel não lê mais o arquivo de continuidade do
+// organismo (ou qualquer markdown) diretamente — todo o contexto vem do
+// Context Hub via fetchOrganismContext() (`GET /api/context`). O único dado
+// que continua local é branch/último commit do checkout deste próprio
+// servidor (via fetchLocalGitStatus), que não é conhecimento do organismo,
+// é estado da máquina de desenvolvimento.
 import { Fragment, useEffect, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { readFile, fetchLocalGitStatus, type LocalGitStatus } from "@/lib/forge/api-client";
-
-/**
- * Não existe hoje um endpoint HTTP do Context Hub (ver ARCHITECTURE.md do
- * Forge original) — este painel lê LUNA_CONTEXT.md diretamente via capability
- * de filesystem (working directory local) e monta a visão sem inventar um
- * resumo por IA. Missão atual é o início real do arquivo, não uma reescrita.
- */
-const CONTEXT_PATHS = ["luna_context/LUNA_CONTEXT.md", "LUNA_CONTEXT.md"];
-
-function extractMission(content: string): string {
-  const withoutHeading = content.replace(/^#.*\n/, "").trim();
-  const firstParagraph = withoutHeading.split(/\n\s*\n/)[0] ?? "";
-  return firstParagraph.slice(0, 400);
-}
+import { fetchLocalGitStatus, fetchOrganismContext, type LocalGitStatus, type OrganismContext } from "@/lib/forge/api-client";
 
 export function ContextPanel() {
   const [gitStatus, setGitStatus] = useState<LocalGitStatus | null>(null);
-  const [contextContent, setContextContent] = useState<string | null>(null);
-  const [contextPath, setContextPath] = useState<string | null>(null);
+  const [context, setContext] = useState<OrganismContext | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchLocalGitStatus().then(setGitStatus).catch(() => setGitStatus(null));
-
-    (async () => {
-      for (const path of CONTEXT_PATHS) {
-        try {
-          const content = await readFile(path);
-          setContextContent(content);
-          setContextPath(path);
-          return;
-        } catch {
-          continue;
-        }
-      }
-      setError("LUNA_CONTEXT.md não encontrado no diretório de trabalho atual do Gateway.");
-    })();
+    fetchOrganismContext()
+      .then(setContext)
+      .catch((err) => setError(err instanceof Error ? err.message : "Falha ao reconstruir contexto via Context Hub"));
   }, []);
 
-  const mission = contextContent ? extractMission(contextContent) : null;
-
   const fields = [
-    { label: "Sistema atual", value: "LUNA Forge" },
+    { label: "Sistema atual", value: context?.project ?? "…" },
     { label: "Órgão atual", value: "Forge" },
-    { label: "MVP atual", value: "Forge MVP-01" },
-    { label: "Branch", value: gitStatus?.branch ?? "…" },
-    { label: "Último checkpoint", value: gitStatus?.lastCommit ? `${gitStatus.lastCommit.sha.slice(0, 7)} — ${gitStatus.lastCommit.message}` : "…" },
+    { label: "MVP atual", value: context?.currentMvp || "…" },
+    { label: "Branch (local)", value: gitStatus?.branch ?? "…" },
+    {
+      label: "Último commit (local)",
+      value: gitStatus?.lastCommit ? `${gitStatus.lastCommit.sha.slice(0, 7)} — ${gitStatus.lastCommit.message}` : "…",
+    },
+    {
+      label: "Último checkpoint (memória)",
+      value: context?.checkpoints[0] ? context.checkpoints[0].summary : "nenhum disponível",
+    },
   ];
 
   return (
@@ -65,11 +49,65 @@ export function ContextPanel() {
             </Fragment>
           ))}
         </dl>
-        <div className="mt-3 border-t pt-2">
-          <div className="mb-1 text-muted-foreground">Missão atual {contextPath && <span className="font-mono">({contextPath})</span>}</div>
-          {error && <p className="text-destructive">{error}</p>}
-          {mission && <p className="whitespace-pre-wrap">{mission}</p>}
-        </div>
+
+        {error && (
+          <div className="mt-3 border-t pt-2 text-destructive">
+            {error}
+          </div>
+        )}
+
+        {context && (
+          <>
+            <div className="mt-3 border-t pt-2">
+              <div className="mb-1 text-muted-foreground">Missão atual</div>
+              <p className="whitespace-pre-wrap">{context.mission}</p>
+            </div>
+
+            <div className="mt-3 border-t pt-2">
+              <div className="mb-1 text-muted-foreground">Estado arquitetural</div>
+              <p className="whitespace-pre-wrap">{context.architecturalState}</p>
+              <p className="mt-1 text-muted-foreground">{context.organismState}</p>
+            </div>
+
+            {context.roadmap.length > 0 && (
+              <div className="mt-3 border-t pt-2">
+                <div className="mb-1 text-muted-foreground">Roadmap</div>
+                <ul className="list-inside list-disc space-y-0.5">
+                  {context.roadmap.map((item) => (
+                    <li key={item} className="truncate">{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {context.inferences.length > 0 && (
+              <div className="mt-3 border-t pt-2">
+                <div className="mb-1 text-muted-foreground">Inferências consolidadas</div>
+                <ul className="list-inside list-disc space-y-0.5">
+                  {context.inferences.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {context.activeSystems.length > 0 && (
+              <div className="mt-3 border-t pt-2">
+                <div className="mb-1 text-muted-foreground">Sistemas ativos</div>
+                <p>{context.activeSystems.join(", ")}</p>
+              </div>
+            )}
+
+            {context.providers.length > 0 && (
+              <div className="mt-3 border-t pt-2">
+                <div className="mb-1 text-muted-foreground">Providers</div>
+                <p>
+                  {context.providers.map((provider) => `${provider.id}${provider.configured ? " ✓" : ""}`).join(", ")}
+                </p>
+              </div>
+            )}
+          </>
+        )}
       </ScrollArea>
     </div>
   );

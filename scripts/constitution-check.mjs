@@ -73,4 +73,19 @@ for (const relativePath of sourceFiles) {
   );
 }
 
+// ---- Context Panel (Forge MVP-02): context must be reconstructed by the ----
+// ---- Context Hub, never read from markdown/files directly ----
+const contextPanelPath = "components/forge/context-panel.tsx";
+const contextPanelSource = readFileSync(join(root, contextPanelPath), "utf8");
+assert.match(
+  contextPanelSource,
+  /fetchOrganismContext/,
+  `Context Panel must consume the Context Hub via fetchOrganismContext() (found in ${contextPanelPath})`,
+);
+assert.doesNotMatch(
+  contextPanelSource,
+  /readFile\(|LUNA_CONTEXT\.md/,
+  `Context Panel must never read markdown/files directly — that dependency was eliminated in Forge MVP-02 (found in ${contextPanelPath})`,
+);
+
 console.log(`Constitution checks passed (${sourceFiles.length} files scanned).`);
