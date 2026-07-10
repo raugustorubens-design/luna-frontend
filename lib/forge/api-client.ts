@@ -9,7 +9,24 @@
  * Next.js). O contrato HTTP em si é idêntico.
  */
 
-const LUNA_API_BASE_URL = process.env.NEXT_PUBLIC_LUNA_API_BASE_URL ?? "http://localhost:3001/api";
+/**
+ * `NEXT_PUBLIC_*` env vars are inlined by Next.js at *build* time, not read
+ * at runtime — setting `NEXT_PUBLIC_LUNA_API_BASE_URL` in Railway's
+ * "Variables" only takes effect on the *next* build. If a production build
+ * ever runs without it configured, the old unconditional
+ * `?? "http://localhost:3001/api"` fallback got baked into the client
+ * bundle permanently, so the deployed app called `localhost:3001` from
+ * every visitor's browser (ERR_CONNECTION_REFUSED) — that's the bug this
+ * fixes. The dev-only default stays localhost (correct for `pnpm run dev`
+ * against a local backend); a production build with no explicit env var now
+ * falls back to the real deployed backend instead of localhost.
+ */
+const PRODUCTION_LUNA_API_BASE_URL = "https://strong-celebration-production.up.railway.app/api";
+const DEVELOPMENT_LUNA_API_BASE_URL = "http://localhost:3001/api";
+
+const LUNA_API_BASE_URL =
+  process.env.NEXT_PUBLIC_LUNA_API_BASE_URL ??
+  (process.env.NODE_ENV === "production" ? PRODUCTION_LUNA_API_BASE_URL : DEVELOPMENT_LUNA_API_BASE_URL);
 
 export interface CapabilityManifest {
   id: string;
