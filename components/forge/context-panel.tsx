@@ -8,18 +8,30 @@
 // é estado da máquina de desenvolvimento.
 import { Fragment, useEffect, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { fetchLocalGitStatus, fetchOrganismContext, type LocalGitStatus, type OrganismContext } from "@/lib/forge/api-client";
+import {
+  fetchLocalGitStatus,
+  fetchOrganismContext,
+  searchGuardianMemoryIndex,
+  type GuardianMemoryImpressaoCognitiva,
+  type LocalGitStatus,
+  type OrganismContext,
+} from "@/lib/forge/api-client";
 
 export function ContextPanel() {
   const [gitStatus, setGitStatus] = useState<LocalGitStatus | null>(null);
   const [context, setContext] = useState<OrganismContext | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [memories, setMemories] = useState<GuardianMemoryImpressaoCognitiva[] | null>(null);
+  const [memoriesError, setMemoriesError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchLocalGitStatus().then(setGitStatus).catch(() => setGitStatus(null));
     fetchOrganismContext()
       .then(setContext)
       .catch((err) => setError(err instanceof Error ? err.message : "Falha ao reconstruir contexto via Context Hub"));
+    searchGuardianMemoryIndex({ limit: 5 })
+      .then((result) => setMemories(result.resultados))
+      .catch((err) => setMemoriesError(err instanceof Error ? err.message : "Falha ao consultar a Memory Index do Guardian"));
   }, []);
 
   const fields = [
@@ -55,6 +67,22 @@ export function ContextPanel() {
             {error}
           </div>
         )}
+
+        <div className="mt-3 border-t pt-2">
+          <div className="mb-1 text-muted-foreground">Memórias recentes (Guardian)</div>
+          {memoriesError && <p className="text-destructive">{memoriesError}</p>}
+          {!memoriesError && memories && memories.length === 0 && <p className="text-muted-foreground">nenhuma disponível</p>}
+          {!memoriesError && memories && memories.length > 0 && (
+            <ul className="list-inside list-disc space-y-0.5">
+              {memories.map((memoria) => (
+                <li key={memoria.id} className="truncate">
+                  <span className="text-muted-foreground">[{memoria.tipo}]</span> {memoria.resumo}
+                </li>
+              ))}
+            </ul>
+          )}
+          {!memoriesError && memories === null && <p className="text-muted-foreground">…</p>}
+        </div>
 
         {context && (
           <>
