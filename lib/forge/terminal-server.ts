@@ -1,6 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { IncomingMessage } from "node:http";
 import type { WebSocket, WebSocketServer } from "ws";
+import { getToken } from "next-auth/jwt";
+import { isAllowedEmail } from "./allowed-email";
 
 /**
  * Gate do terminal (revisão de código, achado P1): sem isso, qualquer
@@ -8,23 +10,32 @@ import type { WebSocket, WebSocketServer } from "ws";
  * shell interativo sem nenhuma checagem — execução de comando arbitrário
  * para qualquer um que soubesse a URL. Em desenvolvimento local (`isDev`,
  * ambiente confiável — só o operador tem acesso à porta), segue liberado.
- * Em produção, só aceita a conexão com um token que bate com
- * `expectedToken` (`FORGE_TERMINAL_TOKEN`) — sem essa variável configurada,
- * o terminal fica desabilitado por padrão (nenhum shell é criado).
  *
- * Não é autenticação real (o token, quando configurado, também é exposto ao
- * client via `NEXT_PUBLIC_FORGE_TERMINAL_TOKEN` — ver DEPLOY.md) — é o
- * controle mínimo apropriado para este MVP: impede bots/scanners
- * automatizados, exige leitura deliberada do bundle do client para extrair
- * o segredo. Autenticação real do Forge é dívida registrada, não
- * implementada aqui.
+ * Em produção, dois controles independentes, ambos obrigatórios:
+ * 1. Sessão Google válida (via `middleware.ts`/Auth.js) cujo e-mail bate com
+ *    `FORGE_ALLOWED_EMAIL` — esta é a camada de autenticação de verdade.
+ * 2. Um token que bate com `FORGE_TERMINAL_TOKEN` — mantido como defesa em
+ *    profundidade mesmo depois do login Google entrar em cena; sem essa
+ *    variável configurada, o terminal fica desabilitado por padrão (nenhum
+ *    shell é criado).
+ *
+ * O WebSocket handshake não passa pelo middleware do Next (ver
+ * `createTerminalClientVerifier` abaixo) — por isso a checagem de sessão
+ * precisa ser refeita aqui, lendo o mesmo cookie httpOnly que o Auth.js já
+ * gerencia, em vez de confiar que o middleware já rodou.
  */
 export function verifyTerminalClient(
   isDev: boolean,
   expectedToken: string | undefined,
   requestUrl: string | undefined,
+  sessionEmail: string | null,
+  allowedEmail: string | undefined,
 ): { allowed: true } | { allowed: false; code: number; message: string } {
   if (isDev) return { allowed: true };
+
+  if (!isAllowedEmail(sessionEmail, allowedEmail)) {
+    return { allowed: false, code: 401, message: "Forge terminal requires an authenticated LUNA session for the allowed account" };
+  }
 
   if (!expectedToken) {
     return { allowed: false, code: 503, message: "Forge terminal is disabled — FORGE_TERMINAL_TOKEN is not configured" };
@@ -36,13 +47,33 @@ export function verifyTerminalClient(
   return { allowed: false, code: 401, message: "Unauthorized" };
 }
 
+/**
+ * Lê e decodifica o cookie de sessão do Auth.js diretamente do `IncomingMessage`
+ * bruto do handshake — `getToken` não depende do contexto de requisição do
+ * Next (`cookies()`/`headers()`), só de `req.headers`, então funciona aqui
+ * fora do pipeline normal do Next. `secureCookie` precisa refletir o mesmo
+ * protocolo que `AUTH_URL` usa em produção (https), senão o Auth.js procura
+ * pelo nome de cookie errado (`__Secure-` vs sem prefixo) e a sessão nunca é
+ * encontrada mesmo com um login válido.
+ */
+async function resolveSessionEmail(req: IncomingMessage): Promise<string | null> {
+  const secureCookie = (process.env.AUTH_URL ?? "").startsWith("https://");
+  const token = await getToken({
+    req: { headers: { cookie: req.headers.cookie ?? "" } },
+    secret: process.env.AUTH_SECRET,
+    secureCookie,
+  });
+  return typeof token?.email === "string" ? token.email : null;
+}
+
 /** Adapta `verifyTerminalClient` para a assinatura `verifyClient` da `ws` (usada em server.ts). */
 export function createTerminalClientVerifier(isDev: boolean) {
-  return (
+  return async (
     info: { req: IncomingMessage },
     callback: (result: boolean, code?: number, message?: string) => void,
-  ): void => {
-    const result = verifyTerminalClient(isDev, process.env.FORGE_TERMINAL_TOKEN, info.req.url);
+  ): Promise<void> => {
+    const sessionEmail = isDev ? null : await resolveSessionEmail(info.req);
+    const result = verifyTerminalClient(isDev, process.env.FORGE_TERMINAL_TOKEN, info.req.url, sessionEmail, process.env.FORGE_ALLOWED_EMAIL);
     if (result.allowed) {
       callback(true);
     } else {
