@@ -16,7 +16,8 @@ terminal do Forge funcionar dentro de um único serviço Railway.
 
    | Variável | Valor | Obrigatória |
    |---|---|---|
-   | `NEXT_PUBLIC_LUNA_API_BASE_URL` | URL pública do backend LUNA (Gateway + `/api/chat`), ex.: `https://strong-celebration-production.up.railway.app/api` | Sim — sem isso o Forge cai no default `http://localhost:3001/api`, que não existe em produção |
+   | `NEXT_PUBLIC_LUNA_API_BASE_URL` | URL pública do backend de `/api/chat` e `/api/context` (hoje `luna-guardian`/`strong-celebration`), ex.: `https://strong-celebration-production.up.railway.app/api` | Sim — sem isso o Forge cai no default `http://localhost:3001/api`, que não existe em produção. **Nota (ADR-004):** esse backend não implementa `/context` e implementa `/chat` com um contrato diferente do esperado — lacuna registrada, não corrigida nesta mudança |
+   | `NEXT_PUBLIC_LUNA_GATEWAY_BASE_URL` | URL pública do Gateway, hoje `luna-core` (serviço `uvicorn-main`, projeto `honest-joy`), ex.: `https://uvicorn-main-production-92f8.up.railway.app/api` | Sim — sem isso o Forge cai no default `http://localhost:8080/api`, que não existe em produção. Separado de `NEXT_PUBLIC_LUNA_API_BASE_URL` desde o ADR-004: o Gateway foi portado para `luna-core`, um serviço diferente de onde `/chat`/`/context` respondem hoje |
    | `FORGE_TERMINAL_TOKEN` | Um segredo gerado por você (ex.: `openssl rand -hex 32`) | Sim, para o terminal funcionar — sem essa variável, o servidor rejeita toda conexão em `/forge/terminal` (nenhum shell é criado). Ver "Segurança do terminal" abaixo |
    | `NEXT_PUBLIC_FORGE_TERMINAL_TOKEN` | **O mesmo valor** de `FORGE_TERMINAL_TOKEN` | Sim, junto com a anterior — é como o browser envia o token na conexão WebSocket |
    | `FORGE_WORKING_DIRECTORY` | Diretório de trabalho do terminal/git-status locais do Forge | Não — default é o próprio diretório do deploy (`process.cwd()`), que já é o correto |
@@ -29,9 +30,12 @@ terminal do Forge funcionar dentro de um único serviço Railway.
 - `/` abre (User Mode).
 - `/forge` abre (Dev Mode) sem erro 500 no console do navegador.
 - Explorer lista arquivos (via Gateway `filesystem.list` — depende do backend
-  configurado em `NEXT_PUBLIC_LUNA_API_BASE_URL` estar no ar).
+  configurado em `NEXT_PUBLIC_LUNA_GATEWAY_BASE_URL` estar no ar).
 - Editor abre um arquivo real e salva (Cmd/Ctrl+S).
-- Chat envia e recebe resposta real da LUNA.
+- Chat envia e recebe resposta real da LUNA (depende de `NEXT_PUBLIC_LUNA_API_BASE_URL`
+  — hoje aponta para um backend cujo `/chat` tem contrato diferente do
+  esperado por este cliente; ver nota do ADR-004 acima, não corrigido nesta
+  mudança).
 - Painel GitHub lista branches/commits (depende de `github.list_branches`
   etc. estarem configurados com um token válido no backend — sem isso, o
   painel mostra um erro real do Gateway, não trava).
