@@ -7,6 +7,16 @@
  * do MVP-01 standalone para o luna-frontend. Única mudança de fundo: leitura
  * de env var (`import.meta.env` do Vite -> `process.env.NEXT_PUBLIC_*` do
  * Next.js). O contrato HTTP em si é idêntico.
+ *
+ * ATENÇÃO (ADR-004): `/gateway/*` e `/chat`/`/context` não vivem mais
+ * necessariamente no mesmo backend. O Gateway foi portado para `luna-core`
+ * (ver `LUNA_GATEWAY_BASE_URL` abaixo); `/chat` e `/context` continuam
+ * apontando para o backend antigo (`luna-guardian`/`strong-celebration`),
+ * que nunca implementou essas duas rotas corretamente (achado da auditoria
+ * de Fase 1: `/chat` lá tem um contrato diferente do que este cliente
+ * espera, e `/context` simplesmente não existe naquele serviço). Isso não é
+ * corrigido aqui — só o Gateway estava no escopo desta mudança. Registrado
+ * como lacuna aberta, não corrigida silenciosamente.
  */
 
 /**
@@ -27,6 +37,21 @@ const DEVELOPMENT_LUNA_API_BASE_URL = "http://localhost:3001/api";
 const LUNA_API_BASE_URL =
   process.env.NEXT_PUBLIC_LUNA_API_BASE_URL ??
   (process.env.NODE_ENV === "production" ? PRODUCTION_LUNA_API_BASE_URL : DEVELOPMENT_LUNA_API_BASE_URL);
+
+/**
+ * O Gateway (capabilities/execute) foi portado do monorepo `luna` para
+ * `luna-core` (ADR-004) — serviço `uvicorn-main` no projeto Railway
+ * `honest-joy`, agora rodando Node/TypeScript em vez de Python/FastAPI. Base
+ * URL separada de `LUNA_API_BASE_URL` de propósito: os dois backends não são
+ * (ainda) o mesmo serviço, e apontar tudo para `luna-core` quebraria
+ * `/chat`/`/context`, que `luna-core` não implementa.
+ */
+const PRODUCTION_LUNA_GATEWAY_BASE_URL = "https://uvicorn-main-production-92f8.up.railway.app/api";
+const DEVELOPMENT_LUNA_GATEWAY_BASE_URL = "http://localhost:8080/api";
+
+const LUNA_GATEWAY_BASE_URL =
+  process.env.NEXT_PUBLIC_LUNA_GATEWAY_BASE_URL ??
+  (process.env.NODE_ENV === "production" ? PRODUCTION_LUNA_GATEWAY_BASE_URL : DEVELOPMENT_LUNA_GATEWAY_BASE_URL);
 
 export interface CapabilityManifest {
   id: string;
@@ -87,7 +112,7 @@ async function parseCapabilityResult<T>(response: Response): Promise<CapabilityR
 }
 
 export async function listCapabilities(): Promise<CapabilityManifest[]> {
-  const response = await fetch(`${LUNA_API_BASE_URL}/gateway/capabilities`);
+  const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/gateway/capabilities`);
   const data = await parseJsonOrThrow<{ capabilities: CapabilityManifest[] }>(response);
   return data.capabilities;
 }
@@ -97,7 +122,7 @@ export async function executeCapability<TOutput = unknown>(
   input: unknown,
   options?: { dryRun?: boolean },
 ): Promise<CapabilityResult<TOutput>> {
-  const response = await fetch(`${LUNA_API_BASE_URL}/gateway/execute`, {
+  const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/gateway/execute`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ capability, input, dryRun: options?.dryRun ?? false }),
