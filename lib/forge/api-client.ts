@@ -186,6 +186,37 @@ export async function fetchOrganismContext(): Promise<OrganismContext> {
   return parseJsonOrThrow<OrganismContext>(response);
 }
 
+// ---- Guardian Memory Index (via Gateway) ----
+//
+// Distinto do Context Hub acima: não substitui `fetchOrganismContext`/
+// `/context` (que continua indisponível, lacuna já registrada) — consome a
+// nova capability `guardian.memory_index_search`, exposta pelo Gateway
+// (`luna-core`), que por sua vez fala com a Memory Index do Guardian
+// (`luna-guardian`, `GET /guardian/memory/index-search`). Nunca acessa o
+// Guardian diretamente — sempre via Gateway (ADR-002).
+
+export interface GuardianMemoryImpressaoCognitiva {
+  id: string;
+  tipo: string;
+  resumo: string;
+  camada: number;
+  estado: string;
+  criadoEm: string;
+  ref: { collection: string; id: string };
+}
+
+export interface GuardianMemoryIndexSearchResult {
+  resultados: GuardianMemoryImpressaoCognitiva[];
+  suficiente: boolean;
+  motivo: string;
+}
+
+export async function searchGuardianMemoryIndex(params?: { tipo?: string; q?: string; limit?: number }): Promise<GuardianMemoryIndexSearchResult> {
+  const result = await executeCapability<GuardianMemoryIndexSearchResult>("guardian.memory_index_search", params ?? {});
+  if (!result.success || !result.output) throw new Error(result.error?.message ?? "Falha ao consultar a Memory Index do Guardian");
+  return result.output;
+}
+
 /**
  * `NEXT_PUBLIC_FORGE_TERMINAL_TOKEN` deve ser igual ao `FORGE_TERMINAL_TOKEN`
  * do servidor (ver server.ts) — em produção, o servidor rejeita a conexão
