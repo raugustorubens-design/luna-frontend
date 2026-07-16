@@ -16,7 +16,7 @@ terminal do Forge funcionar dentro de um único serviço Railway.
 
    | Variável | Valor | Obrigatória |
    |---|---|---|
-   | `NEXT_PUBLIC_LUNA_API_BASE_URL` | URL pública do backend de `/api/chat` e `/api/context` (hoje `luna-guardian`/`strong-celebration`), ex.: `https://strong-celebration-production.up.railway.app/api` | Sim — sem isso o Forge cai no default `http://localhost:3001/api`, que não existe em produção. **Nota (ADR-004):** esse backend não implementa `/context` e implementa `/chat` com um contrato diferente do esperado — lacuna registrada, não corrigida nesta mudança |
+   | `NEXT_PUBLIC_LUNA_API_BASE_URL` | URL pública do Cognitive Engine (monorepo `luna`, `apps/frontend/artifacts/api-server`), que serve `/api/chat` e `/api/context`, ex.: `https://strong-celebration-production.up.railway.app/api` | Sim — sem isso o Forge cai no default `http://localhost:3001/api`, que não existe em produção. **Nota (ADR-004, atualizada):** esse mesmo serviço Railway rodava um protótipo Vite órfão sem `/chat`/`/context` corretos, e foi erroneamente atribuído a um serviço `luna-guardian` na auditoria de Fase 1 — a causa real (`railway.json` quebrado no monorepo `luna`) foi corrigida em LUNA-001 (ver `luna_context/LUNA_CONTEXT.md` §16 nesse repo); o serviço agora serve o Cognitive Engine real |
    | `NEXT_PUBLIC_LUNA_GATEWAY_BASE_URL` | URL pública do Gateway, hoje `luna-core` (serviço `uvicorn-main`, projeto `honest-joy`), ex.: `https://uvicorn-main-production-92f8.up.railway.app/api` | Sim — sem isso o Forge cai no default `http://localhost:8080/api`, que não existe em produção. Separado de `NEXT_PUBLIC_LUNA_API_BASE_URL` desde o ADR-004: o Gateway foi portado para `luna-core`, um serviço diferente de onde `/chat`/`/context` respondem hoje |
    | `AUTH_GOOGLE_ID` | Client ID do OAuth do Google Cloud Console | Sim, para o login do `/forge` — ver "Autenticação do /forge" abaixo |
    | `AUTH_GOOGLE_SECRET` | Client Secret do mesmo OAuth client | Sim, junto com a anterior |
@@ -42,10 +42,9 @@ terminal do Forge funcionar dentro de um único serviço Railway.
 - Explorer lista arquivos (via Gateway `filesystem.list` — depende do backend
   configurado em `NEXT_PUBLIC_LUNA_GATEWAY_BASE_URL` estar no ar).
 - Editor abre um arquivo real e salva (Cmd/Ctrl+S).
-- Chat envia e recebe resposta real da LUNA (depende de `NEXT_PUBLIC_LUNA_API_BASE_URL`
-  — hoje aponta para um backend cujo `/chat` tem contrato diferente do
-  esperado por este cliente; ver nota do ADR-004 acima, não corrigido nesta
-  mudança).
+- Chat envia e recebe resposta real da LUNA, e a conversa é persistida via
+  Hipocampo → Memory Engine → Supabase (depende de `NEXT_PUBLIC_LUNA_API_BASE_URL`
+  apontando para o Cognitive Engine real — ver nota do ADR-004 acima).
 - Painel GitHub lista branches/commits (depende de `github.list_branches`
   etc. estarem configurados com um token válido no backend — sem isso, o
   painel mostra um erro real do Gateway, não trava).

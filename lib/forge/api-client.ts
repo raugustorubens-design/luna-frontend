@@ -10,13 +10,24 @@
  *
  * ATENÇÃO (ADR-004): `/gateway/*` e `/chat`/`/context` não vivem mais
  * necessariamente no mesmo backend. O Gateway foi portado para `luna-core`
- * (ver `LUNA_GATEWAY_BASE_URL` abaixo); `/chat` e `/context` continuam
- * apontando para o backend antigo (`luna-guardian`/`strong-celebration`),
- * que nunca implementou essas duas rotas corretamente (achado da auditoria
- * de Fase 1: `/chat` lá tem um contrato diferente do que este cliente
- * espera, e `/context` simplesmente não existe naquele serviço). Isso não é
- * corrigido aqui — só o Gateway estava no escopo desta mudança. Registrado
- * como lacuna aberta, não corrigida silenciosamente.
+ * (ver `LUNA_GATEWAY_BASE_URL` abaixo); `/chat` e `/context` apontam para
+ * `LUNA_API_BASE_URL` (hoje `strong-celebration-production.up.railway.app`),
+ * que é o deploy Railway do **próprio Cognitive Engine** (monorepo `luna`,
+ * `apps/frontend/artifacts/api-server`) — não do serviço `luna-guardian`. A
+ * auditoria de Fase 1 atribuiu esse backend a `luna-guardian` e registrou
+ * `/chat` com contrato incompatível e `/context` inexistente; a causa real
+ * (LUNA-001, ver `luna_context/LUNA_CONTEXT.md` §16 no monorepo `luna`,
+ * commits `d17a668`/`0651068`) era um `railway.json` quebrado na raiz do
+ * monorepo, que fazia esse mesmo serviço Railway rodar o protótipo Vite
+ * órfão em vez do Cognitive Engine real — já corrigido lá. Confirmado por
+ * leitura de código (não por request real: este ambiente de dev não tem
+ * TCP direto de Postgres, então o smoke test local ficou limitado a
+ * `/api/healthz`) que `routes/chat.ts` responde `SendMessageResponse`
+ * (id/conversationId/role/content/createdAt, igual a `ChatMessage` abaixo) e
+ * que `buildOrganismContext()` (`routes/context.ts`) responde exatamente o
+ * shape de `OrganismContext` abaixo. Nenhuma terceira env var foi criada:
+ * `LUNA_API_BASE_URL` já era, por nome e por uso, "a URL do Cognitive
+ * Engine" — só apontava para a config errada nesse serviço Railway.
  */
 
 /**
@@ -189,8 +200,8 @@ export async function fetchOrganismContext(): Promise<OrganismContext> {
 // ---- Guardian Memory Index (via Gateway) ----
 //
 // Distinto do Context Hub acima: não substitui `fetchOrganismContext`/
-// `/context` (que continua indisponível, lacuna já registrada) — consome a
-// nova capability `guardian.memory_index_search`, exposta pelo Gateway
+// `/context` (que já responde via o Cognitive Engine — ver nota no topo do
+// arquivo) — consome a nova capability `guardian.memory_index_search`, exposta pelo Gateway
 // (`luna-core`), que por sua vez fala com a Memory Index do Guardian
 // (`luna-guardian`, `GET /guardian/memory/index-search`). Nunca acessa o
 // Guardian diretamente — sempre via Gateway (ADR-002).
