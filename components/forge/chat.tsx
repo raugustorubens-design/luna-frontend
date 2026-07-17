@@ -8,11 +8,7 @@ import { Button } from "@/components/ui/button";
 import { sendChatMessage, type ChatMessage } from "@/lib/forge/api-client";
 import { cn } from "@/lib/forge/utils";
 import { FORGE_AGENTS, FORGE_AGENT_LABELS, FORGE_AGENT_DEFAULT_MODEL, type ForgeAgent, type MessageAttribution } from "@/lib/forge/attribution";
-
-// FORGE-MVP-03 (Projetos com contexto próprio) ainda não existe — até lá,
-// toda mensagem é atribuída a este projeto default. Trocar por um valor
-// vindo do seletor de projeto quando o MVP-03 for implementado.
-const DEFAULT_PROJECT_ID = "LUNA";
+import { useForgeProject } from "@/lib/forge/project-context";
 
 interface DisplayMessage {
   role: "user" | "assistant";
@@ -22,12 +18,12 @@ interface DisplayMessage {
   error?: boolean;
 }
 
-function makeAttribution(agent: ForgeAgent): MessageAttribution {
+function makeAttribution(agent: ForgeAgent, projectId: string): MessageAttribution {
   return {
     agent,
     model: FORGE_AGENT_DEFAULT_MODEL[agent],
     timestamp: new Date().toISOString(),
-    projectId: DEFAULT_PROJECT_ID,
+    projectId,
   };
 }
 
@@ -39,6 +35,10 @@ export function Chat() {
   // FORGE-MVP-02: um agente ativo por vez em v0.1 — v0.2 troca isto por
   // múltiplos agentes concorrentes, sem mudar o modelo de atribuição.
   const [activeAgent, setActiveAgent] = useState<ForgeAgent>("claude");
+  // FORGE-MVP-03: projeto ativo, compartilhado com o resto do Forge via
+  // ProjectProvider (ver forge-layout.tsx) — substitui o default fixo que
+  // existia aqui antes deste MVP.
+  const { project } = useForgeProject();
 
   async function handleSend() {
     const content = input.trim();
@@ -47,8 +47,8 @@ export function Chat() {
     setInput("");
     setMessages((prev) => [
       ...prev,
-      { role: "user", content, attribution: makeAttribution(activeAgent) },
-      { role: "assistant", content: "…", attribution: makeAttribution(activeAgent), pending: true },
+      { role: "user", content, attribution: makeAttribution(activeAgent, project) },
+      { role: "assistant", content: "…", attribution: makeAttribution(activeAgent, project), pending: true },
     ]);
     setSending(true);
 
@@ -60,7 +60,7 @@ export function Chat() {
       setConversationId(reply.conversationId);
       setMessages((prev) => {
         const next = [...prev];
-        next[next.length - 1] = { role: "assistant", content: reply.content, attribution: makeAttribution(activeAgent) };
+        next[next.length - 1] = { role: "assistant", content: reply.content, attribution: makeAttribution(activeAgent, project) };
         return next;
       });
     } catch (err) {
@@ -69,7 +69,7 @@ export function Chat() {
         next[next.length - 1] = {
           role: "assistant",
           content: err instanceof Error ? err.message : "Erro ao falar com a LUNA.",
-          attribution: makeAttribution(activeAgent),
+          attribution: makeAttribution(activeAgent, project),
           error: true,
         };
         return next;
