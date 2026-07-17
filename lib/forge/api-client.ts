@@ -171,6 +171,57 @@ export async function fetchLocalGitStatus(): Promise<LocalGitStatus> {
   return parseJsonOrThrow<LocalGitStatus>(response);
 }
 
+// ---- Git write actions (Forge MVP-06) ----
+//
+// Assim como fetchLocalGitStatus acima, estas rotas rodam no próprio
+// servidor do Forge (nunca via GitHub API/Gateway) e usam a credencial de
+// serviço já configurada nesse ambiente — independente de qual agente
+// (GPT/Claude/Groq) está ativo no Chat (Forge MVP-02).
+
+export interface GitCommitResult {
+  committed: boolean;
+  sha: string | null;
+  message: string;
+}
+
+export async function commitLocalChanges(message: string): Promise<GitCommitResult> {
+  const response = await fetch(`/api/forge/git-commit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  });
+  return parseJsonOrThrow<GitCommitResult>(response);
+}
+
+export interface GitPushResult {
+  branch: string;
+  output: string;
+}
+
+export async function pushLocalBranch(): Promise<GitPushResult> {
+  const response = await fetch(`/api/forge/git-push`, { method: "POST" });
+  return parseJsonOrThrow<GitPushResult>(response);
+}
+
+export interface GitPullResult {
+  branch: string;
+  output: string;
+}
+
+export async function pullLocalBranch(): Promise<GitPullResult> {
+  const response = await fetch(`/api/forge/git-pull`, { method: "POST" });
+  return parseJsonOrThrow<GitPullResult>(response);
+}
+
+export async function createGitBranch(name: string): Promise<LocalGitStatus> {
+  const response = await fetch(`/api/forge/git-branch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  return parseJsonOrThrow<LocalGitStatus>(response);
+}
+
 // ---- Context Hub (Forge MVP-02) ----
 
 export interface OrganismContext {
