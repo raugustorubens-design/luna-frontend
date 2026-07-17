@@ -406,3 +406,26 @@ export async function compareGithubCommits(owner: string, repo: string, base: st
   if (!result.success || !result.output) throw new Error(result.error?.message ?? "Falha ao comparar commits");
   return result.output;
 }
+
+// ---- Reporter manual (Forge MVP-07) ----
+//
+// "Analisar Projeto" — mesmo escopo de ENG-007 (GENESIS/ENGINEER.md,
+// `raugustorubens-design/Luna-context.md`): o Reporter verifica por
+// evidência, nunca cria ou reprioriza item de Roadmap/Framework. Este
+// cliente só chama a capability e exibe o resultado — nenhuma ação de
+// escrita no Roadmap acontece a partir daqui. Distinto do Reporter
+// automático (congelado por ARCH-001) — este é sempre disparado
+// manualmente pelo botão.
+
+export interface ReporterAnalysis {
+  pendencias: string[];
+  concluido: string[];
+  roadmap: string[];
+  drift: string[];
+}
+
+export async function analyzeProject(project: string): Promise<ReporterAnalysis> {
+  const result = await executeCapability<ReporterAnalysis>("reporter.analyze_project", { project });
+  if (!result.success || !result.output) throw new Error(result.error?.message ?? "Falha ao analisar o projeto via Reporter");
+  return result.output;
+}
