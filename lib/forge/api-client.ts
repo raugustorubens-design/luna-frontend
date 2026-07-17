@@ -19,6 +19,8 @@
  * como lacuna aberta, não corrigida silenciosamente.
  */
 
+import type { MemoryItem } from "./memory";
+
 /**
  * `NEXT_PUBLIC_*` env vars are inlined by Next.js at *build* time, not read
  * at runtime — setting `NEXT_PUBLIC_LUNA_API_BASE_URL` in Railway's
@@ -138,11 +140,22 @@ export interface ChatMessage {
   createdAt: string;
 }
 
-export async function sendChatMessage(content: string, conversationId?: string): Promise<ChatMessage> {
+/**
+ * `agent`/`model` (Forge MVP-02, seletor de agente) são enviados junto do
+ * corpo como metadado de atribuição — aditivo, não muda o contrato
+ * existente. Quem decide de fato qual provider responde continua sendo o
+ * ProviderRouter do backend; isto não força roteamento, só rotula a
+ * intenção do desenvolvedor no momento do envio.
+ */
+export async function sendChatMessage(
+  content: string,
+  conversationId?: string,
+  attribution?: { agent: string; model: string },
+): Promise<ChatMessage> {
   const response = await fetch(`${LUNA_API_BASE_URL}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content, role: "user", conversationId }),
+    body: JSON.stringify({ content, role: "user", conversationId, agent: attribution?.agent, model: attribution?.model }),
   });
   return parseJsonOrThrow<ChatMessage>(response);
 }
@@ -155,6 +168,57 @@ export interface LocalGitStatus {
 /** Servido pela própria instância Next.js (custom server), não pelo Gateway — ver app/api/forge/git-status. */
 export async function fetchLocalGitStatus(): Promise<LocalGitStatus> {
   const response = await fetch(`/api/forge/git-status`);
+  return parseJsonOrThrow<LocalGitStatus>(response);
+}
+
+// ---- Git write actions (Forge MVP-06) ----
+//
+// Assim como fetchLocalGitStatus acima, estas rotas rodam no próprio
+// servidor do Forge (nunca via GitHub API/Gateway) e usam a credencial de
+// serviço já configurada nesse ambiente — independente de qual agente
+// (GPT/Claude/Groq) está ativo no Chat (Forge MVP-02).
+
+export interface GitCommitResult {
+  committed: boolean;
+  sha: string | null;
+  message: string;
+}
+
+export async function commitLocalChanges(message: string): Promise<GitCommitResult> {
+  const response = await fetch(`/api/forge/git-commit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  });
+  return parseJsonOrThrow<GitCommitResult>(response);
+}
+
+export interface GitPushResult {
+  branch: string;
+  output: string;
+}
+
+export async function pushLocalBranch(): Promise<GitPushResult> {
+  const response = await fetch(`/api/forge/git-push`, { method: "POST" });
+  return parseJsonOrThrow<GitPushResult>(response);
+}
+
+export interface GitPullResult {
+  branch: string;
+  output: string;
+}
+
+export async function pullLocalBranch(): Promise<GitPullResult> {
+  const response = await fetch(`/api/forge/git-pull`, { method: "POST" });
+  return parseJsonOrThrow<GitPullResult>(response);
+}
+
+export async function createGitBranch(name: string): Promise<LocalGitStatus> {
+  const response = await fetch(`/api/forge/git-branch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
   return parseJsonOrThrow<LocalGitStatus>(response);
 }
 
@@ -217,6 +281,35 @@ export async function searchGuardianMemoryIndex(params?: { tipo?: string; q?: st
   return result.output;
 }
 
+// ---- Storage Contract (Forge MVP-04) ----
+//
+// Forge → Guardian (Memory Service) → Storage Contract → adapter de banco
+// (GENESIS/FORGE.md § Storage Contract, `raugustorubens-design/Luna-context.md`).
+// O Forge fala só com o Guardian, via Gateway — nunca com o Storage
+// Contract nem o adapter de banco diretamente, mesmo padrão de
+// searchGuardianMemoryIndex acima. Guardian nunca conhece qual banco está
+// por trás do Storage Contract; trocar de banco no futuro não muda nenhum
+// chamador daqui (nem este arquivo precisa nomear o banco atual — ver
+// constitution-check.mjs, que bloqueia esse token de propósito).
+
+export interface MemoryQuery {
+  project?: string;
+  q?: string;
+  limit?: number;
+}
+
+export async function persistMemory(item: MemoryItem): Promise<MemoryItem> {
+  const result = await executeCapability<MemoryItem>("guardian.persist_memory", item);
+  if (!result.success || !result.output) throw new Error(result.error?.message ?? "Falha ao persistir memória via Guardian");
+  return result.output;
+}
+
+export async function retrieveMemory(query: MemoryQuery = {}): Promise<MemoryItem[]> {
+  const result = await executeCapability<{ items: MemoryItem[] }>("guardian.retrieve_memory", query);
+  if (!result.success || !result.output) throw new Error(result.error?.message ?? "Falha ao consultar memória via Guardian");
+  return result.output.items;
+}
+
 /**
  * `NEXT_PUBLIC_FORGE_TERMINAL_TOKEN` deve ser igual ao `FORGE_TERMINAL_TOKEN`
  * do servidor (ver server.ts) — em produção, o servidor rejeita a conexão
@@ -258,6 +351,31 @@ export async function writeFile(path: string, content: string): Promise<void> {
 }
 
 // ---- GitHub capabilities (Git panel) ----
+
+/**
+ * `github.read_file` — capability madura e testada no Gateway (ver
+ * apps/frontend/artifacts/api-server/src/gateway/capabilities/github/
+ * read-file.ts no monorepo `luna`), diferente de `guardian.*`/
+ * `reporter.*` acima (cujo status real no backend não foi confirmado
+ * nesta sessão). Usada pelo painel Claude Code (Forge MVP-08) para ler
+ * GENESIS/BUILDER.md do ecossistema.
+ */
+export interface GithubFileContent {
+  owner: string;
+  repo: string;
+  path: string;
+  ref: string;
+  sha: string;
+  content: string;
+  size: number;
+  htmlUrl: string;
+}
+
+export async function readGithubFile(owner: string, repo: string, path: string): Promise<GithubFileContent> {
+  const result = await executeCapability<GithubFileContent>("github.read_file", { owner, repo, path });
+  if (!result.success || !result.output) throw new Error(result.error?.message ?? "Falha ao ler arquivo do GitHub");
+  return result.output;
+}
 
 export interface GithubBranchSummary {
   name: string;
@@ -311,5 +429,28 @@ export interface GithubCompareResult {
 export async function compareGithubCommits(owner: string, repo: string, base: string, head: string): Promise<GithubCompareResult> {
   const result = await executeCapability<GithubCompareResult>("github.compare_commits", { owner, repo, base, head });
   if (!result.success || !result.output) throw new Error(result.error?.message ?? "Falha ao comparar commits");
+  return result.output;
+}
+
+// ---- Reporter manual (Forge MVP-07) ----
+//
+// "Analisar Projeto" — mesmo escopo de ENG-007 (GENESIS/ENGINEER.md,
+// `raugustorubens-design/Luna-context.md`): o Reporter verifica por
+// evidência, nunca cria ou reprioriza item de Roadmap/Framework. Este
+// cliente só chama a capability e exibe o resultado — nenhuma ação de
+// escrita no Roadmap acontece a partir daqui. Distinto do Reporter
+// automático (congelado por ARCH-001) — este é sempre disparado
+// manualmente pelo botão.
+
+export interface ReporterAnalysis {
+  pendencias: string[];
+  concluido: string[];
+  roadmap: string[];
+  drift: string[];
+}
+
+export async function analyzeProject(project: string): Promise<ReporterAnalysis> {
+  const result = await executeCapability<ReporterAnalysis>("reporter.analyze_project", { project });
+  if (!result.success || !result.output) throw new Error(result.error?.message ?? "Falha ao analisar o projeto via Reporter");
   return result.output;
 }

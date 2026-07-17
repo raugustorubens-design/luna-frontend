@@ -8,14 +8,32 @@
 // é estado da máquina de desenvolvimento.
 import { Fragment, useEffect, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
+import { useForgeProject } from "@/lib/forge/project-context";
 import {
   fetchLocalGitStatus,
   fetchOrganismContext,
   searchGuardianMemoryIndex,
+  analyzeProject,
   type GuardianMemoryImpressaoCognitiva,
   type LocalGitStatus,
   type OrganismContext,
+  type ReporterAnalysis,
 } from "@/lib/forge/api-client";
+
+function ReporterList({ title, items }: { title: string; items: string[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-2">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{title}</div>
+      <ul className="list-inside list-disc space-y-0.5">
+        {items.map((item) => (
+          <li key={item} className="truncate">{item}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 export function ContextPanel() {
   const [gitStatus, setGitStatus] = useState<LocalGitStatus | null>(null);
@@ -23,6 +41,14 @@ export function ContextPanel() {
   const [error, setError] = useState<string | null>(null);
   const [memories, setMemories] = useState<GuardianMemoryImpressaoCognitiva[] | null>(null);
   const [memoriesError, setMemoriesError] = useState<string | null>(null);
+  // Forge MVP-07 — Reporter manual: só roda quando o botão é clicado, nunca
+  // automaticamente (distinto do Reporter automático, congelado por
+  // ARCH-001). Só exibe evidência já existente — nunca cria/reprioriza
+  // item de Roadmap a partir daqui (ver ENG-007).
+  const { project } = useForgeProject();
+  const [reporterResult, setReporterResult] = useState<ReporterAnalysis | null>(null);
+  const [reporterError, setReporterError] = useState<string | null>(null);
+  const [reporterLoading, setReporterLoading] = useState(false);
 
   useEffect(() => {
     fetchLocalGitStatus().then(setGitStatus).catch(() => setGitStatus(null));
@@ -33,6 +59,18 @@ export function ContextPanel() {
       .then((result) => setMemories(result.resultados))
       .catch((err) => setMemoriesError(err instanceof Error ? err.message : "Falha ao consultar a Memory Index do Guardian"));
   }, []);
+
+  async function handleAnalyzeProject() {
+    setReporterLoading(true);
+    setReporterError(null);
+    try {
+      setReporterResult(await analyzeProject(project));
+    } catch (err) {
+      setReporterError(err instanceof Error ? err.message : "Falha ao analisar o projeto via Reporter.");
+    } finally {
+      setReporterLoading(false);
+    }
+  }
 
   const fields = [
     { label: "Sistema atual", value: context?.project ?? "…" },
@@ -82,6 +120,35 @@ export function ContextPanel() {
             </ul>
           )}
           {!memoriesError && memories === null && <p className="text-muted-foreground">…</p>}
+        </div>
+
+        <div className="mt-3 border-t pt-2">
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-muted-foreground">Reporter (manual)</span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-5 px-1.5 text-[10px]"
+              onClick={handleAnalyzeProject}
+              disabled={reporterLoading}
+              title="Verifica pendências/concluído/roadmap/drift por evidência — nunca cria ou reprioriza item"
+            >
+              {reporterLoading ? "Analisando…" : "Analisar Projeto"}
+            </Button>
+          </div>
+          {reporterError && <p className="text-destructive">{reporterError}</p>}
+          {reporterResult && (
+            <>
+              <ReporterList title="Pendências" items={reporterResult.pendencias} />
+              <ReporterList title="Concluído" items={reporterResult.concluido} />
+              <ReporterList title="Roadmap" items={reporterResult.roadmap} />
+              <ReporterList title="Drift" items={reporterResult.drift} />
+              {reporterResult.pendencias.length === 0 &&
+                reporterResult.concluido.length === 0 &&
+                reporterResult.roadmap.length === 0 &&
+                reporterResult.drift.length === 0 && <p className="text-muted-foreground">nada a reportar</p>}
+            </>
+          )}
         </div>
 
         {context && (

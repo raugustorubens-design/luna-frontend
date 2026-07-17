@@ -2,15 +2,20 @@
 
 // Portado de forge/apps/web/src/components/git-panel/GitPanel.tsx (monorepo `luna`).
 import { useState } from "react";
-import { GitBranch, GitCommit, GitPullRequest, Merge, RefreshCw } from "lucide-react";
+import { GitBranch, GitCommit, GitPullRequest, Merge, RefreshCw, Upload, Download, Plus } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/forge/utils";
 import {
   listGithubBranches,
   listGithubCommits,
   listGithubPullRequests,
   compareGithubCommits,
+  commitLocalChanges,
+  pushLocalBranch,
+  pullLocalBranch,
+  createGitBranch,
   type GithubBranchSummary,
   type GithubCommitSummary,
   type GithubPullRequestSummary,
@@ -39,6 +44,61 @@ export function GitPanel() {
   const [diff, setDiff] = useState<GithubCompareResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Forge MVP-06 — botões de escrita (commit/push/pull/branch), sempre sob
+  // a credencial de serviço do servidor (ver lib/forge/git.ts), nunca a de
+  // um agente de chat. Estado separado do resto do painel (que é só
+  // leitura via GitHub API/Gateway) porque estas ações mexem no checkout
+  // git local, não no repositório remoto listado acima.
+  const [commitMessage, setCommitMessage] = useState("");
+  const [newBranchName, setNewBranchName] = useState("");
+  const [gitActionPending, setGitActionPending] = useState<string | null>(null);
+  const [gitActionFeedback, setGitActionFeedback] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function runGitAction(name: string, action: () => Promise<string>) {
+    setGitActionPending(name);
+    setGitActionFeedback(null);
+    try {
+      const text = await action();
+      setGitActionFeedback({ ok: true, text });
+    } catch (err) {
+      setGitActionFeedback({ ok: false, text: err instanceof Error ? err.message : `Falha em ${name}.` });
+    } finally {
+      setGitActionPending(null);
+    }
+  }
+
+  async function handleCommit() {
+    if (!commitMessage.trim()) return;
+    await runGitAction("commit", async () => {
+      const result = await commitLocalChanges(commitMessage.trim());
+      if (result.committed) setCommitMessage("");
+      return result.committed ? `Commitado: ${result.message}` : result.message;
+    });
+  }
+
+  async function handlePush() {
+    await runGitAction("push", async () => {
+      const result = await pushLocalBranch();
+      return `Push de ${result.branch} concluído.`;
+    });
+  }
+
+  async function handlePull() {
+    await runGitAction("pull", async () => {
+      const result = await pullLocalBranch();
+      return `Pull de ${result.branch} concluído.`;
+    });
+  }
+
+  async function handleCreateBranch() {
+    if (!newBranchName.trim()) return;
+    await runGitAction("branch", async () => {
+      const status = await createGitBranch(newBranchName.trim());
+      setNewBranchName("");
+      return `Nova branch: ${status.branch}`;
+    });
+  }
 
   async function refresh() {
     setLoading(true);
@@ -89,6 +149,67 @@ export function GitPanel() {
       </div>
 
       {error && <div className="border-b px-3 py-1.5 text-xs text-destructive">{error}</div>}
+
+      <div className="flex flex-wrap items-center gap-1.5 border-b px-3 py-1.5">
+        <input
+          value={commitMessage}
+          onChange={(event) => setCommitMessage(event.target.value)}
+          placeholder="Mensagem do commit"
+          className="w-40 rounded border border-border bg-transparent px-1.5 py-0.5 text-xs"
+        />
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-1.5 text-[10px]"
+          onClick={handleCommit}
+          disabled={gitActionPending !== null || !commitMessage.trim()}
+          title="git add -A && git commit — checkout local do servidor"
+        >
+          <GitCommit className="mr-1 h-3 w-3" />commit
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-1.5 text-[10px]"
+          onClick={handlePush}
+          disabled={gitActionPending !== null}
+          title="git push -u origin <branch atual>"
+        >
+          <Upload className="mr-1 h-3 w-3" />push
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-1.5 text-[10px]"
+          onClick={handlePull}
+          disabled={gitActionPending !== null}
+          title="git pull na branch atual"
+        >
+          <Download className="mr-1 h-3 w-3" />pull
+        </Button>
+        <input
+          value={newBranchName}
+          onChange={(event) => setNewBranchName(event.target.value)}
+          placeholder="nova-branch"
+          className="w-28 rounded border border-border bg-transparent px-1.5 py-0.5 text-xs"
+        />
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-1.5 text-[10px]"
+          onClick={handleCreateBranch}
+          disabled={gitActionPending !== null || !newBranchName.trim()}
+          title="git checkout -b <nome> — cria e troca localmente"
+        >
+          <Plus className="mr-1 h-3 w-3" />branch
+        </Button>
+      </div>
+
+      {gitActionFeedback && (
+        <div className={cn("border-b px-3 py-1.5 text-xs", gitActionFeedback.ok ? "text-muted-foreground" : "text-destructive")}>
+          {gitActionFeedback.text}
+        </div>
+      )}
 
       <Tabs defaultValue="branches" className="flex flex-1 flex-col overflow-hidden">
         <TabsList className="mx-2 mt-1 justify-start">
