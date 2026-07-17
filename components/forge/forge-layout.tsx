@@ -9,6 +9,8 @@ import { Editor } from "@/components/forge/editor";
 import { Chat } from "@/components/forge/chat";
 import { GitPanel } from "@/components/forge/git-panel";
 import { ContextPanel } from "@/components/forge/context-panel";
+import { ClaudeCodePanel } from "@/components/forge/claude-code-panel";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useState } from "react";
 import { ProjectProvider, useForgeProject } from "@/lib/forge/project-context";
 import { KNOWN_FORGE_PROJECTS } from "@/lib/forge/memory";
@@ -85,7 +87,25 @@ export function ForgeLayout() {
               </ResizablePanel>
               <ResizableHandle withHandle />
               <ResizablePanel defaultSize={40} minSize={20}>
-                <Terminal />
+                {/*
+                  Forge MVP-08: "Claude Code" fica ao lado do Terminal existente,
+                  não o substitui. `forceMount` no TabsContent do Terminal é
+                  proposital — sem ele, o Radix Tabs desmonta o conteúdo inativo,
+                  o que derrubaria a conexão WebSocket (e o processo de shell)
+                  toda vez que o desenvolvedor trocasse de aba.
+                */}
+                <Tabs defaultValue="terminal" className="flex h-full flex-col">
+                  <TabsList className="mx-2 mt-1 w-fit justify-start">
+                    <TabsTrigger value="terminal">Terminal</TabsTrigger>
+                    <TabsTrigger value="claude-code">Claude Code</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="terminal" forceMount className="mt-0 flex-1 overflow-hidden data-[state=inactive]:hidden">
+                    <Terminal />
+                  </TabsContent>
+                  <TabsContent value="claude-code" className="mt-0 flex-1 overflow-hidden">
+                    <ClaudeCodePanel />
+                  </TabsContent>
+                </Tabs>
               </ResizablePanel>
             </ResizablePanelGroup>
           </ResizablePanel>

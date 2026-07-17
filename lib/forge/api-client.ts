@@ -352,6 +352,31 @@ export async function writeFile(path: string, content: string): Promise<void> {
 
 // ---- GitHub capabilities (Git panel) ----
 
+/**
+ * `github.read_file` — capability madura e testada no Gateway (ver
+ * apps/frontend/artifacts/api-server/src/gateway/capabilities/github/
+ * read-file.ts no monorepo `luna`), diferente de `guardian.*`/
+ * `reporter.*` acima (cujo status real no backend não foi confirmado
+ * nesta sessão). Usada pelo painel Claude Code (Forge MVP-08) para ler
+ * GENESIS/BUILDER.md do ecossistema.
+ */
+export interface GithubFileContent {
+  owner: string;
+  repo: string;
+  path: string;
+  ref: string;
+  sha: string;
+  content: string;
+  size: number;
+  htmlUrl: string;
+}
+
+export async function readGithubFile(owner: string, repo: string, path: string): Promise<GithubFileContent> {
+  const result = await executeCapability<GithubFileContent>("github.read_file", { owner, repo, path });
+  if (!result.success || !result.output) throw new Error(result.error?.message ?? "Falha ao ler arquivo do GitHub");
+  return result.output;
+}
+
 export interface GithubBranchSummary {
   name: string;
   sha: string;
