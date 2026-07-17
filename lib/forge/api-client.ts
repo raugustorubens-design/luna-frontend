@@ -19,6 +19,8 @@
  * como lacuna aberta, não corrigida silenciosamente.
  */
 
+import type { MemoryItem } from "./memory";
+
 /**
  * `NEXT_PUBLIC_*` env vars are inlined by Next.js at *build* time, not read
  * at runtime — setting `NEXT_PUBLIC_LUNA_API_BASE_URL` in Railway's
@@ -215,6 +217,33 @@ export async function searchGuardianMemoryIndex(params?: { tipo?: string; q?: st
   const result = await executeCapability<GuardianMemoryIndexSearchResult>("guardian.memory_index_search", params ?? {});
   if (!result.success || !result.output) throw new Error(result.error?.message ?? "Falha ao consultar a Memory Index do Guardian");
   return result.output;
+}
+
+// ---- Storage Contract (Forge MVP-04) ----
+//
+// Forge → Guardian (Memory Service) → Storage Contract → Supabase Adapter
+// (GENESIS/FORGE.md § Storage Contract, `raugustorubens-design/Luna-context.md`).
+// O Forge fala só com o Guardian, via Gateway — nunca com o Storage
+// Contract nem o Supabase Adapter diretamente, mesmo padrão de
+// searchGuardianMemoryIndex acima. Guardian nunca conhece Supabase; trocar
+// de banco no futuro não muda nenhum chamador daqui.
+
+export interface MemoryQuery {
+  project?: string;
+  q?: string;
+  limit?: number;
+}
+
+export async function persistMemory(item: MemoryItem): Promise<MemoryItem> {
+  const result = await executeCapability<MemoryItem>("guardian.persist_memory", item);
+  if (!result.success || !result.output) throw new Error(result.error?.message ?? "Falha ao persistir memória via Guardian");
+  return result.output;
+}
+
+export async function retrieveMemory(query: MemoryQuery = {}): Promise<MemoryItem[]> {
+  const result = await executeCapability<{ items: MemoryItem[] }>("guardian.retrieve_memory", query);
+  if (!result.success || !result.output) throw new Error(result.error?.message ?? "Falha ao consultar memória via Guardian");
+  return result.output.items;
 }
 
 /**
