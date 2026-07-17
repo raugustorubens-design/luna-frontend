@@ -140,11 +140,22 @@ export interface ChatMessage {
   createdAt: string;
 }
 
-export async function sendChatMessage(content: string, conversationId?: string): Promise<ChatMessage> {
+/**
+ * `agent`/`model` (Forge MVP-02, seletor de agente) são enviados junto do
+ * corpo como metadado de atribuição — aditivo, não muda o contrato
+ * existente. Quem decide de fato qual provider responde continua sendo o
+ * ProviderRouter do backend; isto não força roteamento, só rotula a
+ * intenção do desenvolvedor no momento do envio.
+ */
+export async function sendChatMessage(
+  content: string,
+  conversationId?: string,
+  attribution?: { agent: string; model: string },
+): Promise<ChatMessage> {
   const response = await fetch(`${LUNA_API_BASE_URL}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content, role: "user", conversationId }),
+    body: JSON.stringify({ content, role: "user", conversationId, agent: attribution?.agent, model: attribution?.model }),
   });
   return parseJsonOrThrow<ChatMessage>(response);
 }
@@ -221,12 +232,14 @@ export async function searchGuardianMemoryIndex(params?: { tipo?: string; q?: st
 
 // ---- Storage Contract (Forge MVP-04) ----
 //
-// Forge → Guardian (Memory Service) → Storage Contract → Supabase Adapter
+// Forge → Guardian (Memory Service) → Storage Contract → adapter de banco
 // (GENESIS/FORGE.md § Storage Contract, `raugustorubens-design/Luna-context.md`).
 // O Forge fala só com o Guardian, via Gateway — nunca com o Storage
-// Contract nem o Supabase Adapter diretamente, mesmo padrão de
-// searchGuardianMemoryIndex acima. Guardian nunca conhece Supabase; trocar
-// de banco no futuro não muda nenhum chamador daqui.
+// Contract nem o adapter de banco diretamente, mesmo padrão de
+// searchGuardianMemoryIndex acima. Guardian nunca conhece qual banco está
+// por trás do Storage Contract; trocar de banco no futuro não muda nenhum
+// chamador daqui (nem este arquivo precisa nomear o banco atual — ver
+// constitution-check.mjs, que bloqueia esse token de propósito).
 
 export interface MemoryQuery {
   project?: string;

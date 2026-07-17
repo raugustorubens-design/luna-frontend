@@ -7,12 +7,28 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { sendChatMessage, type ChatMessage } from "@/lib/forge/api-client";
 import { cn } from "@/lib/forge/utils";
+import { FORGE_AGENTS, FORGE_AGENT_LABELS, FORGE_AGENT_DEFAULT_MODEL, type ForgeAgent, type MessageAttribution } from "@/lib/forge/attribution";
+
+// FORGE-MVP-03 (Projetos com contexto próprio) ainda não existe — até lá,
+// toda mensagem é atribuída a este projeto default. Trocar por um valor
+// vindo do seletor de projeto quando o MVP-03 for implementado.
+const DEFAULT_PROJECT_ID = "LUNA";
 
 interface DisplayMessage {
   role: "user" | "assistant";
   content: string;
+  attribution: MessageAttribution;
   pending?: boolean;
   error?: boolean;
+}
+
+function makeAttribution(agent: ForgeAgent): MessageAttribution {
+  return {
+    agent,
+    model: FORGE_AGENT_DEFAULT_MODEL[agent],
+    timestamp: new Date().toISOString(),
+    projectId: DEFAULT_PROJECT_ID,
+  };
 }
 
 export function Chat() {
@@ -20,21 +36,31 @@ export function Chat() {
   const [input, setInput] = useState("");
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
   const [sending, setSending] = useState(false);
+  // FORGE-MVP-02: um agente ativo por vez em v0.1 — v0.2 troca isto por
+  // múltiplos agentes concorrentes, sem mudar o modelo de atribuição.
+  const [activeAgent, setActiveAgent] = useState<ForgeAgent>("claude");
 
   async function handleSend() {
     const content = input.trim();
     if (!content || sending) return;
 
     setInput("");
-    setMessages((prev) => [...prev, { role: "user", content }, { role: "assistant", content: "…", pending: true }]);
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content, attribution: makeAttribution(activeAgent) },
+      { role: "assistant", content: "…", attribution: makeAttribution(activeAgent), pending: true },
+    ]);
     setSending(true);
 
     try {
-      const reply: ChatMessage = await sendChatMessage(content, conversationId);
+      const reply: ChatMessage = await sendChatMessage(content, conversationId, {
+        agent: activeAgent,
+        model: FORGE_AGENT_DEFAULT_MODEL[activeAgent],
+      });
       setConversationId(reply.conversationId);
       setMessages((prev) => {
         const next = [...prev];
-        next[next.length - 1] = { role: "assistant", content: reply.content };
+        next[next.length - 1] = { role: "assistant", content: reply.content, attribution: makeAttribution(activeAgent) };
         return next;
       });
     } catch (err) {
@@ -43,6 +69,7 @@ export function Chat() {
         next[next.length - 1] = {
           role: "assistant",
           content: err instanceof Error ? err.message : "Erro ao falar com a LUNA.",
+          attribution: makeAttribution(activeAgent),
           error: true,
         };
         return next;
@@ -54,20 +81,47 @@ export function Chat() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Chat da LUNA</div>
+      <div className="flex items-center justify-between px-3 py-1.5">
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Chat da LUNA</span>
+        <div className="flex gap-1" role="radiogroup" aria-label="Agente ativo">
+          {FORGE_AGENTS.map((agent) => (
+            <button
+              key={agent}
+              type="button"
+              role="radio"
+              aria-checked={activeAgent === agent}
+              onClick={() => setActiveAgent(agent)}
+              className={cn(
+                "rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+                activeAgent === agent ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
+              )}
+              title={`Falar com ${FORGE_AGENT_LABELS[agent]}`}
+            >
+              {FORGE_AGENT_LABELS[agent]}
+            </button>
+          ))}
+        </div>
+      </div>
       <ScrollArea className="flex-1 px-3">
         <div className="flex flex-col gap-2 py-2">
-          {messages.length === 0 && <p className="text-sm text-muted-foreground">Converse com a LUNA. Ela decide, sozinha, qual provider responde.</p>}
+          {messages.length === 0 && (
+            <p className="text-sm text-muted-foreground">Escolha um agente acima e converse. Toda mensagem fica atribuída a ele.</p>
+          )}
           {messages.map((message, index) => (
-            <div
-              key={index}
-              className={cn(
-                "max-w-[80%] rounded-lg px-3 py-2 text-sm",
-                message.role === "user" ? "self-end bg-primary text-primary-foreground" : "self-start bg-muted",
-                message.error && "border border-destructive text-destructive",
-              )}
-            >
-              {message.content}
+            <div key={index} className={cn("flex flex-col gap-0.5", message.role === "user" ? "items-end" : "items-start")}>
+              <div
+                className={cn(
+                  "max-w-[80%] rounded-lg px-3 py-2 text-sm",
+                  message.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted",
+                  message.error && "border border-destructive text-destructive",
+                )}
+              >
+                {message.content}
+              </div>
+              <span className="px-1 text-[10px] text-muted-foreground">
+                {FORGE_AGENT_LABELS[message.attribution.agent]} · {message.attribution.model} ·{" "}
+                {new Date(message.attribution.timestamp).toLocaleTimeString()}
+              </span>
             </div>
           ))}
         </div>
@@ -82,7 +136,7 @@ export function Chat() {
               handleSend();
             }
           }}
-          placeholder="Fale com a LUNA…"
+          placeholder={`Fale com ${FORGE_AGENT_LABELS[activeAgent]}…`}
           className="flex-1 rounded-md border border-border bg-transparent px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
         />
         <Button size="icon" onClick={handleSend} disabled={sending}>
