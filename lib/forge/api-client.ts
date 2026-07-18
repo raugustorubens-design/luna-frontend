@@ -8,45 +8,27 @@
  * de env var (`import.meta.env` do Vite -> `process.env.NEXT_PUBLIC_*` do
  * Next.js). O contrato HTTP em si é idêntico.
  *
- * ATENÇÃO (ADR-004): `/gateway/*` e `/chat`/`/context` não vivem mais
- * necessariamente no mesmo backend. O Gateway foi portado para `luna-core`
- * (ver `LUNA_GATEWAY_BASE_URL` abaixo); `/chat` e `/context` continuam
- * apontando para o backend antigo (`luna-guardian`/`strong-celebration`),
- * que nunca implementou essas duas rotas corretamente (achado da auditoria
- * de Fase 1: `/chat` lá tem um contrato diferente do que este cliente
- * espera, e `/context` simplesmente não existe naquele serviço). Isso não é
- * corrigido aqui — só o Gateway estava no escopo desta mudança. Registrado
- * como lacuna aberta, não corrigida silenciosamente.
+ * ATUALIZADO (ADR-012): a lacuna que este comentário descrevia foi fechada.
+ * `/chat`/`/context` foram portados do monorepo `luna` para `luna-core`
+ * (mesmo backend do Gateway) — o contrato incompatível de `luna-guardian`/
+ * `strong-celebration` foi descontinuado junto (rotas removidas de lá).
+ * `LUNA_API_BASE_URL` deixou de existir como base separada: `sendChatMessage`/
+ * `fetchOrganismContext` agora usam `LUNA_GATEWAY_BASE_URL`, a mesma base de
+ * `listCapabilities`/`executeCapability`.
  */
 
 import type { MemoryItem } from "./memory";
 
 /**
- * `NEXT_PUBLIC_*` env vars are inlined by Next.js at *build* time, not read
- * at runtime — setting `NEXT_PUBLIC_LUNA_API_BASE_URL` in Railway's
- * "Variables" only takes effect on the *next* build. If a production build
- * ever runs without it configured, the old unconditional
- * `?? "http://localhost:3001/api"` fallback got baked into the client
- * bundle permanently, so the deployed app called `localhost:3001` from
- * every visitor's browser (ERR_CONNECTION_REFUSED) — that's the bug this
- * fixes. The dev-only default stays localhost (correct for `pnpm run dev`
- * against a local backend); a production build with no explicit env var now
- * falls back to the real deployed backend instead of localhost.
- */
-const PRODUCTION_LUNA_API_BASE_URL = "https://strong-celebration-production.up.railway.app/api";
-const DEVELOPMENT_LUNA_API_BASE_URL = "http://localhost:3001/api";
-
-const LUNA_API_BASE_URL =
-  process.env.NEXT_PUBLIC_LUNA_API_BASE_URL ??
-  (process.env.NODE_ENV === "production" ? PRODUCTION_LUNA_API_BASE_URL : DEVELOPMENT_LUNA_API_BASE_URL);
-
-/**
- * O Gateway (capabilities/execute) foi portado do monorepo `luna` para
- * `luna-core` (ADR-004) — serviço `uvicorn-main` no projeto Railway
- * `honest-joy`, agora rodando Node/TypeScript em vez de Python/FastAPI. Base
- * URL separada de `LUNA_API_BASE_URL` de propósito: os dois backends não são
- * (ainda) o mesmo serviço, e apontar tudo para `luna-core` quebraria
- * `/chat`/`/context`, que `luna-core` não implementa.
+ * O Gateway, o Cognitive Engine (`/chat`, `/context`) e o Convergia
+ * (`/convergia/*`) vivem todos em `luna-core` desde o ADR-012 — serviço
+ * `uvicorn-main` no projeto Railway `honest-joy`. Uma única base URL para
+ * os três, ao contrário de antes (ADR-004 só tinha portado o Gateway;
+ * `/chat`/`/context` continuavam num backend separado e desatualizado).
+ *
+ * `NEXT_PUBLIC_*` env vars são inlined pelo Next.js em *build* time, não
+ * lidas em runtime — configurar `NEXT_PUBLIC_LUNA_GATEWAY_BASE_URL` no
+ * Railway só tem efeito no *próximo* build.
  */
 const PRODUCTION_LUNA_GATEWAY_BASE_URL = "https://uvicorn-main-production-92f8.up.railway.app/api";
 const DEVELOPMENT_LUNA_GATEWAY_BASE_URL = "http://localhost:8080/api";
@@ -152,7 +134,7 @@ export async function sendChatMessage(
   conversationId?: string,
   attribution?: { agent: string; model: string },
 ): Promise<ChatMessage> {
-  const response = await fetch(`${LUNA_API_BASE_URL}/chat`, {
+  const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content, role: "user", conversationId, agent: attribution?.agent, model: attribution?.model }),
@@ -246,7 +228,7 @@ export interface OrganismContext {
  * capability — ver decisão registrada em LUNA_CONTEXT.md.
  */
 export async function fetchOrganismContext(): Promise<OrganismContext> {
-  const response = await fetch(`${LUNA_API_BASE_URL}/context`);
+  const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/context`);
   return parseJsonOrThrow<OrganismContext>(response);
 }
 
@@ -453,4 +435,174 @@ export async function analyzeProject(project: string): Promise<ReporterAnalysis>
   const result = await executeCapability<ReporterAnalysis>("reporter.analyze_project", { project });
   if (!result.success || !result.output) throw new Error(result.error?.message ?? "Falha ao analisar o projeto via Reporter");
   return result.output;
+}
+
+// ---- Convergia (ADR-012 Decisão 2) ----
+//
+// Fluxo: upload de arquivo -> catálogo -> upload de treinamento/conhecimento
+// -> transformação. `/convergia/*` são rotas irmãs do Gateway em luna-core
+// (mesmo padrão de /api/chat, /api/context, portadas juntas pelo ADR-012)
+// — não são capabilities, por isso não passam por executeCapability.
+
+export interface ConvergiaCatalogEntry {
+  id: string;
+  label: string;
+  category: "ssma" | "gerencial" | "apresentacao";
+}
+
+export async function fetchConvergiaCatalog(): Promise<ConvergiaCatalogEntry[]> {
+  const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/convergia/catalog`);
+  const data = await parseJsonOrThrow<{ documents: ConvergiaCatalogEntry[] }>(response);
+  return data.documents;
+}
+
+export interface ConvergiaTemplateVariable {
+  name: string;
+  required: boolean;
+  description: string;
+}
+
+export interface ConvergiaTemplateSummary {
+  id: string;
+  version: number;
+  type: "tabular_report" | "certificate" | "procedure" | "presentation";
+  renderer: "csv" | "json" | "markdown" | "html" | "xlsx" | "pptx";
+  variables: ConvergiaTemplateVariable[];
+  metadata: {
+    owner: string;
+    category: string;
+    description: string;
+    regulatoryStatus: "validated" | "pending_specialist_review" | "not_applicable";
+  };
+}
+
+/** `layout` (função) do TemplateDescriptor não sobrevive à serialização JSON — nunca chega aqui. */
+export async function fetchConvergiaTemplates(): Promise<ConvergiaTemplateSummary[]> {
+  const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/convergia/templates`);
+  const data = await parseJsonOrThrow<{ templates: ConvergiaTemplateSummary[] }>(response);
+  return data.templates;
+}
+
+export interface CanonicalField {
+  name: string;
+  value: string | number | boolean | null;
+}
+
+export interface CanonicalRecord {
+  fields: CanonicalField[];
+}
+
+export interface CanonicalDocument {
+  title: string;
+  columns: string[];
+  records: CanonicalRecord[];
+  metadata: {
+    sourceFormat: "xlsx" | "csv" | "json";
+    sourceName: string;
+    parsedAt: string;
+    recordCount: number;
+  };
+}
+
+export interface ConvergiaValidationIssue {
+  path: string;
+  message: string;
+}
+
+export interface ConvergiaValidationResult {
+  valid: boolean;
+  issues: ConvergiaValidationIssue[];
+}
+
+export interface ConvergiaParseResult {
+  document: CanonicalDocument;
+  validation: ConvergiaValidationResult;
+  warnings: string[];
+}
+
+/** Etapa 1 do fluxo — upload de arquivo (xlsx/csv/json), parse + validação apenas, sem renderizar nada. */
+export async function parseConvergiaFile(file: File, format?: string): Promise<ConvergiaParseResult> {
+  const body = new FormData();
+  body.append("file", file);
+  if (format) body.append("format", format);
+  const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/convergia/parse`, { method: "POST", body });
+  return parseJsonOrThrow<ConvergiaParseResult>(response);
+}
+
+export interface ConvergiaTransformParams {
+  file: File;
+  format?: string;
+  templateId: string;
+  templateVersion?: number;
+  transformId?: string;
+  persistAsKnowledge?: boolean;
+  knowledgeType?: "semantica" | "procedimental" | "inferencial";
+}
+
+export interface ConvergiaTransformResult {
+  blob: Blob;
+  filename: string;
+  mimeType: string;
+  warnings: string[];
+}
+
+/** Etapa 4 do fluxo — transformação final. Sucesso não é JSON (é o arquivo renderizado), por isso não usa parseJsonOrThrow. */
+export async function transformConvergiaFile(params: ConvergiaTransformParams): Promise<ConvergiaTransformResult> {
+  const body = new FormData();
+  body.append("file", params.file);
+  if (params.format) body.append("format", params.format);
+  body.append("templateId", params.templateId);
+  if (params.templateVersion !== undefined) body.append("templateVersion", String(params.templateVersion));
+  if (params.transformId) body.append("transformId", params.transformId);
+  if (params.persistAsKnowledge) body.append("persistAsKnowledge", "true");
+  if (params.knowledgeType) body.append("knowledgeType", params.knowledgeType);
+
+  const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/convergia/transform`, { method: "POST", body });
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => null);
+    throw new Error(extractErrorMessage(errorBody, response.statusText));
+  }
+
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const filenameMatch = disposition.match(/filename="([^"]+)"/);
+  const warningsHeader = response.headers.get("X-Convergia-Warnings");
+
+  return {
+    blob: await response.blob(),
+    filename: filenameMatch?.[1] ?? "documento-convergia",
+    mimeType: response.headers.get("Content-Type") ?? "application/octet-stream",
+    warnings: warningsHeader ? (JSON.parse(warningsHeader) as string[]) : [],
+  };
+}
+
+export interface ConvergiaTrainingExtraction {
+  concepts: string[];
+  procedures: string[];
+  relations: Array<{ from: string; to: string; type: "co_occurs_with" }>;
+  compactedSummary: string;
+  inferences: string[];
+}
+
+export interface ConvergiaConsolidationDecision {
+  action: "consolidate" | "discard";
+  reason: string;
+}
+
+export interface ConvergiaTrainingResult {
+  extraction: ConvergiaTrainingExtraction;
+  decisions: {
+    semantica?: ConvergiaConsolidationDecision;
+    procedimental?: ConvergiaConsolidationDecision;
+    inferencial?: ConvergiaConsolidationDecision;
+  };
+}
+
+/** Etapa 3 do fluxo — upload de treinamento/conhecimento em texto (não é upload de arquivo binário). */
+export async function submitConvergiaTraining(title: string, content: string): Promise<ConvergiaTrainingResult> {
+  const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/convergia/training`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title, content }),
+  });
+  return parseJsonOrThrow<ConvergiaTrainingResult>(response);
 }

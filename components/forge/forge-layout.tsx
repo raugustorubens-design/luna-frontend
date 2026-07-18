@@ -10,6 +10,7 @@ import { Chat } from "@/components/forge/chat";
 import { GitPanel } from "@/components/forge/git-panel";
 import { ContextPanel } from "@/components/forge/context-panel";
 import { ClaudeCodePanel } from "@/components/forge/claude-code-panel";
+import { ConvergiaPanel } from "@/components/forge/convergia-panel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useState } from "react";
 import { ProjectProvider, useForgeProject } from "@/lib/forge/project-context";
@@ -45,71 +46,89 @@ export function ForgeLayout() {
   return (
     <ProjectProvider>
       <div className="flex h-screen flex-col">
-        <header className="flex items-center gap-2 border-b px-3 py-1.5">
-          <span className="forge-brand-glow h-2 w-2 rounded-full bg-primary" />
-          <span className="text-sm font-semibold forge-accent-text">LUNA Forge</span>
-          <span className="text-xs text-muted-foreground">MVP-01 · Dev Mode</span>
-          <ProjectSelector />
-          <Link href="/" className="ml-auto text-xs text-muted-foreground hover:text-foreground">
-            ← User Mode
-          </Link>
-        </header>
+        <Tabs defaultValue="workspace" className="flex flex-1 flex-col overflow-hidden">
+          <header className="flex items-center gap-2 border-b px-3 py-1.5">
+            <span className="forge-brand-glow h-2 w-2 rounded-full bg-primary" />
+            <span className="text-sm font-semibold forge-accent-text">LUNA Forge</span>
+            <span className="text-xs text-muted-foreground">MVP-01 · Dev Mode</span>
+            <ProjectSelector />
+            <TabsList>
+              <TabsTrigger value="workspace">Workspace</TabsTrigger>
+              <TabsTrigger value="convergia">Convergia</TabsTrigger>
+            </TabsList>
+            <Link href="/" className="ml-auto text-xs text-muted-foreground hover:text-foreground">
+              ← User Mode
+            </Link>
+          </header>
 
-        <ResizablePanelGroup direction="vertical" className="flex-1">
-          <ResizablePanel defaultSize={55} minSize={25}>
-            <ResizablePanelGroup direction="horizontal">
-              <ResizablePanel defaultSize={20} minSize={12}>
-                <Explorer activePath={activeFile} onSelectFile={setActiveFile} />
+          {/*
+            `forceMount` no Workspace é proposital, mesmo padrão do Terminal
+            abaixo: o Terminal aninhado dentro dele mantém uma conexão
+            WebSocket viva que não pode ser derrubada ao trocar para a aba
+            Convergia.
+          */}
+          <TabsContent value="workspace" forceMount className="mt-0 flex-1 overflow-hidden data-[state=inactive]:hidden">
+            <ResizablePanelGroup direction="vertical" className="h-full">
+              <ResizablePanel defaultSize={55} minSize={25}>
+                <ResizablePanelGroup direction="horizontal">
+                  <ResizablePanel defaultSize={20} minSize={12}>
+                    <Explorer activePath={activeFile} onSelectFile={setActiveFile} />
+                  </ResizablePanel>
+                  <ResizableHandle withHandle />
+                  <ResizablePanel defaultSize={80} minSize={30}>
+                    <Editor openPath={activeFile} />
+                  </ResizablePanel>
+                </ResizablePanelGroup>
               </ResizablePanel>
+
               <ResizableHandle withHandle />
-              <ResizablePanel defaultSize={80} minSize={30}>
-                <Editor openPath={activeFile} />
+
+              <ResizablePanel defaultSize={20} minSize={10}>
+                <Chat />
+              </ResizablePanel>
+
+              <ResizableHandle withHandle />
+
+              <ResizablePanel defaultSize={25} minSize={12}>
+                <ResizablePanelGroup direction="horizontal">
+                  <ResizablePanel defaultSize={22} minSize={15}>
+                    <ContextPanel />
+                  </ResizablePanel>
+                  <ResizableHandle withHandle />
+                  <ResizablePanel defaultSize={38} minSize={20}>
+                    <GitPanel />
+                  </ResizablePanel>
+                  <ResizableHandle withHandle />
+                  <ResizablePanel defaultSize={40} minSize={20}>
+                    {/*
+                      Forge MVP-08: "Claude Code" fica ao lado do Terminal existente,
+                      não o substitui. `forceMount` no TabsContent do Terminal é
+                      proposital — sem ele, o Radix Tabs desmonta o conteúdo inativo,
+                      o que derrubaria a conexão WebSocket (e o processo de shell)
+                      toda vez que o desenvolvedor trocasse de aba.
+                    */}
+                    <Tabs defaultValue="terminal" className="flex h-full flex-col">
+                      <TabsList className="mx-2 mt-1 w-fit justify-start">
+                        <TabsTrigger value="terminal">Terminal</TabsTrigger>
+                        <TabsTrigger value="claude-code">Claude Code</TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="terminal" forceMount className="mt-0 flex-1 overflow-hidden data-[state=inactive]:hidden">
+                        <Terminal />
+                      </TabsContent>
+                      <TabsContent value="claude-code" className="mt-0 flex-1 overflow-hidden">
+                        <ClaudeCodePanel />
+                      </TabsContent>
+                    </Tabs>
+                  </ResizablePanel>
+                </ResizablePanelGroup>
               </ResizablePanel>
             </ResizablePanelGroup>
-          </ResizablePanel>
+          </TabsContent>
 
-          <ResizableHandle withHandle />
-
-          <ResizablePanel defaultSize={20} minSize={10}>
-            <Chat />
-          </ResizablePanel>
-
-          <ResizableHandle withHandle />
-
-          <ResizablePanel defaultSize={25} minSize={12}>
-            <ResizablePanelGroup direction="horizontal">
-              <ResizablePanel defaultSize={22} minSize={15}>
-                <ContextPanel />
-              </ResizablePanel>
-              <ResizableHandle withHandle />
-              <ResizablePanel defaultSize={38} minSize={20}>
-                <GitPanel />
-              </ResizablePanel>
-              <ResizableHandle withHandle />
-              <ResizablePanel defaultSize={40} minSize={20}>
-                {/*
-                  Forge MVP-08: "Claude Code" fica ao lado do Terminal existente,
-                  não o substitui. `forceMount` no TabsContent do Terminal é
-                  proposital — sem ele, o Radix Tabs desmonta o conteúdo inativo,
-                  o que derrubaria a conexão WebSocket (e o processo de shell)
-                  toda vez que o desenvolvedor trocasse de aba.
-                */}
-                <Tabs defaultValue="terminal" className="flex h-full flex-col">
-                  <TabsList className="mx-2 mt-1 w-fit justify-start">
-                    <TabsTrigger value="terminal">Terminal</TabsTrigger>
-                    <TabsTrigger value="claude-code">Claude Code</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="terminal" forceMount className="mt-0 flex-1 overflow-hidden data-[state=inactive]:hidden">
-                    <Terminal />
-                  </TabsContent>
-                  <TabsContent value="claude-code" className="mt-0 flex-1 overflow-hidden">
-                    <ClaudeCodePanel />
-                  </TabsContent>
-                </Tabs>
-              </ResizablePanel>
-            </ResizablePanelGroup>
-          </ResizablePanel>
-        </ResizablePanelGroup>
+          <TabsContent value="convergia" className="mt-0 flex-1 overflow-hidden">
+            <ConvergiaPanel />
+          </TabsContent>
+        </Tabs>
       </div>
     </ProjectProvider>
   );
