@@ -7,6 +7,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/forge/utils";
+import { useForgeProject } from "@/lib/forge/project-context";
+import { defaultRepoForProject, isKnownRepo } from "@/lib/forge/known-repos";
 import {
   listGithubBranches,
   listGithubCommits,
@@ -22,9 +24,18 @@ import {
   type GithubCompareResult,
 } from "@/lib/forge/api-client";
 
+/**
+ * Suggests owner/repo from the active Forge project (see `known-repos.ts`)
+ * instead of a hardcoded default, and only when there's nothing saved yet —
+ * a value the user already typed always wins, even an unrecognized one
+ * (`isKnownRepo` below is what flags that case, not this function).
+ */
 function useRepoTarget() {
-  const [owner, setOwner] = useState(() => (typeof window === "undefined" ? "raugustorubens-design" : localStorage.getItem("forge.github.owner") ?? "raugustorubens-design"));
-  const [repo, setRepo] = useState(() => (typeof window === "undefined" ? "luna" : localStorage.getItem("forge.github.repo") ?? "luna"));
+  const { project } = useForgeProject();
+  const fallback = defaultRepoForProject(project);
+
+  const [owner, setOwner] = useState(() => (typeof window === "undefined" ? fallback.owner : localStorage.getItem("forge.github.owner") ?? fallback.owner));
+  const [repo, setRepo] = useState(() => (typeof window === "undefined" ? fallback.repo : localStorage.getItem("forge.github.repo") ?? fallback.repo));
 
   function save(nextOwner: string, nextRepo: string) {
     setOwner(nextOwner);
@@ -38,6 +49,7 @@ function useRepoTarget() {
 
 export function GitPanel() {
   const { owner, repo, save } = useRepoTarget();
+  const knownRepo = isKnownRepo(owner, repo);
   const [branches, setBranches] = useState<GithubBranchSummary[] | null>(null);
   const [commits, setCommits] = useState<GithubCommitSummary[] | null>(null);
   const [pullRequests, setPullRequests] = useState<GithubPullRequestSummary[] | null>(null);
@@ -131,22 +143,32 @@ export function GitPanel() {
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b px-3 py-1.5">
         <input
+          key={owner}
           defaultValue={owner}
           onBlur={(event) => save(event.target.value, repo)}
-          className="w-28 rounded border border-border bg-transparent px-1.5 py-0.5 text-xs"
+          className={cn("w-28 rounded border bg-transparent px-1.5 py-0.5 text-xs", knownRepo ? "border-border" : "border-destructive text-destructive")}
           placeholder="owner"
+          title={knownRepo ? undefined : "Repositório não reconhecido no ecossistema LUNA"}
         />
         <span className="text-xs text-muted-foreground">/</span>
         <input
+          key={repo}
           defaultValue={repo}
           onBlur={(event) => save(owner, event.target.value)}
-          className="w-24 rounded border border-border bg-transparent px-1.5 py-0.5 text-xs"
+          className={cn("w-24 rounded border bg-transparent px-1.5 py-0.5 text-xs", knownRepo ? "border-border" : "border-destructive text-destructive")}
           placeholder="repo"
+          title={knownRepo ? undefined : "Repositório não reconhecido no ecossistema LUNA"}
         />
         <Button size="icon" variant="ghost" onClick={refresh} disabled={loading} title="Atualizar via Gateway">
           <RefreshCw className={loading ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} />
         </Button>
       </div>
+
+      {!knownRepo && (
+        <div className="border-b px-3 py-1.5 text-xs text-destructive">
+          "{owner}/{repo}" não é um repositório conhecido do ecossistema LUNA — confira antes de continuar.
+        </div>
+      )}
 
       {error && <div className="border-b px-3 py-1.5 text-xs text-destructive">{error}</div>}
 

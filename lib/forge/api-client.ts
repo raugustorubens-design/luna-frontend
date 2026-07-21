@@ -128,6 +128,13 @@ export interface ChatMessage {
  * existente. Quem decide de fato qual provider responde continua sendo o
  * ProviderRouter do backend; isto não força roteamento, só rotula a
  * intenção do desenvolvedor no momento do envio.
+ *
+ * `X-Luna-Dev-Mode: true` acompanha todo request feito por este módulo —
+ * ele é o único ponto de contato do Forge (Dev Mode, ver topo do arquivo),
+ * nunca do Modo Usuário. É esse header que autoriza o backend a de fato ler
+ * `agent`/`model`; sem ele, o roteamento padrão é usado e o campo é
+ * ignorado — ver `Chat da LUNA` no Modo Usuário, que nunca envia este header
+ * nem expõe seletor de agente.
  */
 export async function sendChatMessage(
   content: string,
@@ -136,7 +143,7 @@ export async function sendChatMessage(
 ): Promise<ChatMessage> {
   const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Luna-Dev-Mode": "true" },
     body: JSON.stringify({ content, role: "user", conversationId, agent: attribution?.agent, model: attribution?.model }),
   });
   return parseJsonOrThrow<ChatMessage>(response);
