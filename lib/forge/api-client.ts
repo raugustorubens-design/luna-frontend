@@ -613,3 +613,44 @@ export async function submitConvergiaTraining(title: string, content: string): P
   });
   return parseJsonOrThrow<ConvergiaTrainingResult>(response);
 }
+
+// ---- Posicionamento de campos (CONV-002) ----
+//
+// Editor de "bolha" arrastável: cada variável do template vira uma caixa
+// posicionável sobre um canvas que representa o slide, em porcentagem da
+// área do slide (0-100), não em EMU — a conversão pra unidade absoluta que
+// pptx-renderer.ts consome (ver PR #25 em luna-core, `sizing: {type:
+// "contain"}`) é responsabilidade do backend ao aplicar o template, não
+// deste editor. `PUT /convergia/templates/:id/positions` ainda não existe
+// em luna-core (só :id/positions de leitura teria sentido simétrico) —
+// bloqueio de Architect registrado no PR #25 (modelo de persistência de
+// templates enviados), ainda não implementado no backend. Chamadas aqui
+// falham com 404 até essa rota existir; o editor deste arquivo continua
+// funcional em memória (arrastar/redimensionar/soltar) independente disso.
+
+export interface ConvergiaFieldPosition {
+  name: string;
+  /** Porcentagem da largura do slide (0-100), canto superior esquerdo da caixa. */
+  x: number;
+  /** Porcentagem da altura do slide (0-100), canto superior esquerdo da caixa. */
+  y: number;
+  /** Porcentagem da largura do slide (0-100). */
+  width: number;
+  /** Porcentagem da altura do slide (0-100). */
+  height: number;
+}
+
+export async function fetchConvergiaTemplatePositions(templateId: string): Promise<ConvergiaFieldPosition[]> {
+  const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/convergia/templates/${encodeURIComponent(templateId)}/positions`);
+  const data = await parseJsonOrThrow<{ positions: ConvergiaFieldPosition[] }>(response);
+  return data.positions;
+}
+
+export async function saveConvergiaTemplatePositions(templateId: string, positions: ConvergiaFieldPosition[]): Promise<void> {
+  const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/convergia/templates/${encodeURIComponent(templateId)}/positions`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ positions }),
+  });
+  await parseJsonOrThrow<{ positions: ConvergiaFieldPosition[] }>(response);
+}
