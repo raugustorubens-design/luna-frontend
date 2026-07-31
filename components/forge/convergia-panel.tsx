@@ -19,6 +19,7 @@ import {
   type ConvergiaTemplateSummary,
   type ConvergiaTrainingResult,
 } from "@/lib/forge/api-client";
+import { ConvergiaPositionEditor } from "@/components/forge/convergia-position-editor";
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">{children}</div>;
@@ -286,6 +287,55 @@ function TransformStep({ file, parseResult }: { file: File | null; parseResult: 
   );
 }
 
+/** Etapa avulsa (CONV-002) — edição da posição de cada campo sobre o slide, por template. Independente do arquivo enviado nas etapas 1/4. */
+function PositionStep() {
+  const [templates, setTemplates] = useState<ConvergiaTemplateSummary[] | null>(null);
+  const [templatesError, setTemplatesError] = useState<string | null>(null);
+  const [templateId, setTemplateId] = useState("");
+
+  useEffect(() => {
+    fetchConvergiaTemplates()
+      .then((list) => {
+        setTemplates(list);
+        if (list.length > 0) setTemplateId((current) => current || list[0]!.id);
+      })
+      .catch((err) => setTemplatesError(err instanceof Error ? err.message : "Falha ao consultar templates do Convergia"));
+  }, []);
+
+  const selected = templates?.find((template) => template.id === templateId) ?? null;
+
+  return (
+    <div className="flex flex-col gap-3 text-xs">
+      <div>
+        <SectionLabel>Template</SectionLabel>
+        {templatesError && <p className="text-destructive">{templatesError}</p>}
+        {!templatesError && templates === null && <p className="text-muted-foreground">…</p>}
+        {templates && templates.length === 0 && <p className="text-muted-foreground">nenhum template registrado</p>}
+        {templates && templates.length > 0 && (
+          <select
+            value={templateId}
+            onChange={(event) => setTemplateId(event.target.value)}
+            className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs"
+          >
+            {templates.map((template) => (
+              <option key={`${template.id}-v${template.version}`} value={template.id}>
+                {template.id} (v{template.version}, {template.renderer}) — {template.metadata.description}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      {selected && (
+        <div className="border-t pt-3">
+          <SectionLabel>Posicionamento de campos ({selected.id})</SectionLabel>
+          <ConvergiaPositionEditor key={selected.id} template={selected} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ConvergiaPanel() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [parseResult, setParseResult] = useState<ConvergiaParseResult | null>(null);
@@ -298,6 +348,7 @@ export function ConvergiaPanel() {
       <Tabs defaultValue="upload" className="flex flex-1 flex-col overflow-hidden">
         <TabsList className="mx-3 w-fit justify-start">
           <TabsTrigger value="upload">Catálogo &amp; Upload</TabsTrigger>
+          <TabsTrigger value="positioning">Posicionamento</TabsTrigger>
           <TabsTrigger value="transform">Transformação</TabsTrigger>
           <TabsTrigger value="training">Conhecimento</TabsTrigger>
         </TabsList>
@@ -309,6 +360,11 @@ export function ConvergiaPanel() {
                 setParseResult(result);
               }}
             />
+          </ScrollArea>
+        </TabsContent>
+        <TabsContent value="positioning" className="mt-0 flex-1 overflow-hidden">
+          <ScrollArea className="h-full px-3 pb-3">
+            <PositionStep />
           </ScrollArea>
         </TabsContent>
         <TabsContent value="transform" className="mt-0 flex-1 overflow-hidden">
