@@ -12,23 +12,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
+          cache: "pnpm"
 
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
 
       - name: Typecheck
-        run: npm run typecheck
+        run: pnpm run typecheck
 
       - name: Constitution check
-        run: npm run test:constitution
+        run: pnpm run test:constitution
 
       - name: Tests
-        run: npm test
+        run: pnpm run test
 
-      # "npm run lint" deliberadamente fora deste workflow: ENG-032 já
+      # "pnpm run lint" deliberadamente fora deste workflow: ENG-032 já
       # registrou que o ESLint deste repositório tem setup interativo
       # (pede configuração na primeira execução) e trava em ambiente não
       # interativo como o de um runner de CI. Precisa ser corrigido
