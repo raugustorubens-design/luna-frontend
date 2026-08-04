@@ -26,6 +26,36 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">{children}</div>;
 }
 
+/**
+ * Reorganização de apresentação do catálogo (correção de escopo do
+ * Rubens: os 13 tipos continuam existindo, têm função futura — ADR-012,
+ * conteúdo alimentado depois via `POST /convergia/training` — a lista
+ * só estava ilegível). Nada de backend muda: `CORPORATE_DOCUMENT_CATALOG`
+ * e `/convergia/catalog` seguem intactos, isto é só a forma de exibir o
+ * mesmo dado. Rótulo legível por categoria, para o cabeçalho de grupo em
+ * vez da tag solta ao lado de cada item.
+ */
+const CATALOG_CATEGORY_LABELS: Record<ConvergiaCatalogEntry["category"], string> = {
+  apresentacao: "Apresentação",
+  gerencial: "Gerencial",
+  ssma: "SSMA",
+};
+
+function groupCatalogByCategory(catalog: ConvergiaCatalogEntry[]): Array<[string, ConvergiaCatalogEntry[]]> {
+  const groups = new Map<ConvergiaCatalogEntry["category"], ConvergiaCatalogEntry[]>();
+  for (const entry of catalog) {
+    const group = groups.get(entry.category) ?? [];
+    group.push(entry);
+    groups.set(entry.category, group);
+  }
+  for (const group of groups.values()) {
+    group.sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+  }
+  return [...groups.entries()]
+    .map(([category, entries]) => [CATALOG_CATEGORY_LABELS[category], entries] as [string, ConvergiaCatalogEntry[]])
+    .sort(([labelA], [labelB]) => labelA.localeCompare(labelB, "pt-BR"));
+}
+
 /** Etapas 1+2 — upload de arquivo e catálogo de tipos de documento (referência, template ainda não aplicado). */
 function CatalogAndUploadStep({
   onParsed,
@@ -83,17 +113,26 @@ function CatalogAndUploadStep({
 
       <div className="border-t pt-3">
         <SectionLabel>2. Catálogo de documentos corporativos</SectionLabel>
+        <p className="mb-2 text-[10px] text-muted-foreground">
+          Tipos de documento planejados (conteúdo alimentado depois pelo especialista) — referência, não clicável, ainda não são templates prontos para usar.
+        </p>
         {catalogError && <p className="text-xs text-destructive">{catalogError}</p>}
         {!catalogError && catalog === null && <p className="text-xs text-muted-foreground">…</p>}
         {catalog && (
-          <ul className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-            {catalog.map((entry) => (
-              <li key={entry.id} className="flex items-center justify-between gap-2 truncate">
-                <span className="truncate">{entry.label}</span>
-                <span className="shrink-0 text-[10px] text-muted-foreground">{entry.category}</span>
-              </li>
+          <div className="flex flex-col gap-3">
+            {groupCatalogByCategory(catalog).map(([categoryLabel, entries]) => (
+              <div key={categoryLabel}>
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-foreground">{categoryLabel}</div>
+                <ul className="flex flex-col divide-y divide-border/60 rounded border border-border/60">
+                  {entries.map((entry) => (
+                    <li key={entry.id} className="px-2 py-1 text-xs">
+                      {entry.label}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ))}
-          </ul>
+          </div>
         )}
       </div>
     </div>
