@@ -14,6 +14,7 @@ import {
   parseConvergiaFile,
   submitConvergiaTraining,
   transformConvergiaFile,
+  uploadConvergiaVisualTemplate,
   type ConvergiaCatalogEntry,
   type ConvergiaParseResult,
   type ConvergiaTemplateSummary,
@@ -93,6 +94,74 @@ function CatalogAndUploadStep({
               </li>
             ))}
           </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * CONV-001 — upload de imagem de fundo para um template visual novo.
+ * Aba própria, separada de "Catálogo & Upload" de propósito (instrução
+ * explícita): "subir dados pra transformar" (arquivo xlsx/csv/json,
+ * etapa 1) e "subir imagem de template" (uma imagem, vira template) são
+ * dois fluxos diferentes — misturar os dois no mesmo formulário confundiria
+ * qual arquivo faz o quê.
+ */
+function VisualTemplateUploadStep() {
+  const [name, setName] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [uploadedTemplateId, setUploadedTemplateId] = useState<string | null>(null);
+
+  async function handleUpload() {
+    const file = fileInputRef.current?.files?.[0];
+    if (!file || !name.trim()) return;
+    setUploading(true);
+    setError(null);
+    setUploadedTemplateId(null);
+    try {
+      const result = await uploadConvergiaVisualTemplate(name.trim(), file);
+      setUploadedTemplateId(result.templateId);
+      setName("");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao enviar o template visual.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div>
+        <SectionLabel>Template visual — imagem de fundo (PNG/JPG)</SectionLabel>
+        <p className="mb-2 text-xs text-muted-foreground">
+          Envie a imagem do certificado/documento real (ex. Manserv/SMX). Depois, use a aba Posicionamento para arrastar campos por cima dela.
+        </p>
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          placeholder="Nome do template (ex. Certificado Manserv)"
+          className="mb-2 w-full rounded-md border border-border bg-transparent px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png,image/jpeg"
+          className="text-xs file:mr-2 file:rounded file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs"
+        />
+        <div className="mt-2 flex justify-end">
+          <Button size="sm" onClick={handleUpload} disabled={uploading || !name.trim()}>
+            {uploading ? "Enviando…" : "Enviar imagem"}
+          </Button>
+        </div>
+        {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+        {uploadedTemplateId && (
+          <p className="mt-1 text-xs text-primary">
+            Template criado ({uploadedTemplateId}) — vá para a aba Posicionamento para adicionar campos.
+          </p>
         )}
       </div>
     </div>
@@ -348,6 +417,7 @@ export function ConvergiaPanel() {
       <Tabs defaultValue="upload" className="flex flex-1 flex-col overflow-hidden">
         <TabsList className="mx-3 w-fit justify-start">
           <TabsTrigger value="upload">Catálogo &amp; Upload</TabsTrigger>
+          <TabsTrigger value="visual-template">Template Visual</TabsTrigger>
           <TabsTrigger value="positioning">Posicionamento</TabsTrigger>
           <TabsTrigger value="transform">Transformação</TabsTrigger>
           <TabsTrigger value="training">Conhecimento</TabsTrigger>
@@ -360,6 +430,11 @@ export function ConvergiaPanel() {
                 setParseResult(result);
               }}
             />
+          </ScrollArea>
+        </TabsContent>
+        <TabsContent value="visual-template" className="mt-0 flex-1 overflow-hidden">
+          <ScrollArea className="h-full px-3 pb-3">
+            <VisualTemplateUploadStep />
           </ScrollArea>
         </TabsContent>
         <TabsContent value="positioning" className="mt-0 flex-1 overflow-hidden">
