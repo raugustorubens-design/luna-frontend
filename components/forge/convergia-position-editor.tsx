@@ -19,6 +19,23 @@
 // `convergiaTemplateImageUrl`, que devolve 404 silenciosamente para
 // templates pré-codificados (sem imagem), então o fundo cinza continua
 // aparecendo para eles.
+//
+// CONV-003 (escopo A, decidido — não é o preview real via .pptx, esse é
+// escopo B, não implementado): preview instantâneo 100% client-side, só
+// para templates visuais (`backgroundLoaded`). "Valor de exemplo" por
+// campo é estado local deste componente, nunca enviado pro backend
+// (não faz parte de `ConvergiaFieldPosition`/o payload de
+// `saveConvergiaTemplatePositions`) — existe só pra essa sessão de
+// edição. O texto de exemplo é renderizado na caixa com o `fontSize`/
+// `fontFamily` reais do campo via CSS, usando `cqw` (container query
+// width, `container-type: inline-size` no canvas): o slide padrão do
+// `pptxgenjs` é 10in × 5.625in = 720pt de largura (`LAYOUT_16x9`,
+// mesmo default que `pptx-renderer.ts` usa), então `fontSize` em pt
+// vira `(fontSize / 720) * 100` unidades de `cqw` — escala com o
+// tamanho real do canvas na tela, sem precisar de ResizeObserver. É
+// aproximação de CSS, não o resultado real do PowerPoint (fontes
+// diferentes têm métricas diferentes, sem kerning/hinting real) — texto
+// de ajuda na UI deixa isso explícito.
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,6 +53,13 @@ const DEFAULT_WIDTH = 28;
 const DEFAULT_HEIGHT = 12;
 const MIN_WIDTH = 6;
 const MIN_HEIGHT = 4;
+/** `pptxgenjs`'s default layout (LAYOUT_16x9, ver pptx-renderer.ts): 10in × 5.625in = 720pt de largura. Base da conversão pt → `cqw` do preview (CONV-003). */
+const SLIDE_WIDTH_PT = 720;
+
+/** `fontSize` (pt) do campo, convertido pra `cqw` do canvas (`container-type: inline-size`) — escala com o tamanho real renderizado, sem JS de resize. */
+function fontSizeToCqw(fontSizePt: number): string {
+  return `${(fontSizePt / SLIDE_WIDTH_PT) * 100}cqw`;
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -62,6 +86,8 @@ export function ConvergiaPositionEditor({ template }: { template: ConvergiaTempl
   const [positions, setPositions] = useState<Record<string, ConvergiaFieldPosition>>({});
   const [fieldOrder, setFieldOrder] = useState<string[]>([]);
   const [newFieldName, setNewFieldName] = useState("");
+  /** CONV-003 — só preview, nunca persistido (não faz parte do payload salvo). */
+  const [sampleValues, setSampleValues] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -79,6 +105,7 @@ export function ConvergiaPositionEditor({ template }: { template: ConvergiaTempl
     setLoadError(null);
     setSaved(false);
     setBackgroundLoaded(false);
+    setSampleValues({});
     fetchConvergiaTemplatePositions(template.id)
       .then((saved) => {
         if (cancelled) return;
@@ -132,7 +159,17 @@ export function ConvergiaPositionEditor({ template }: { template: ConvergiaTempl
       return next;
     });
     setFieldOrder((current) => current.filter((candidate) => candidate !== name));
+    setSampleValues((current) => {
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
     setSaved(false);
+  }
+
+  /** CONV-003 — estado local de preview, nunca chega em `saveConvergiaTemplatePositions`. */
+  function updateSampleValue(name: string, value: string) {
+    setSampleValues((current) => ({ ...current, [name]: value }));
   }
 
   function updateField(name: string, patch: Partial<ConvergiaFieldPosition>) {
@@ -228,11 +265,12 @@ export function ConvergiaPositionEditor({ template }: { template: ConvergiaTempl
         ref={canvasRef}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        style={
-          backgroundLoaded
+        style={{
+          containerType: "inline-size",
+          ...(backgroundLoaded
             ? { backgroundImage: `url(${backgroundImageUrl})`, backgroundSize: "cover", backgroundPosition: "center" }
-            : undefined
-        }
+            : undefined),
+        }}
         className="relative aspect-video w-full select-none overflow-hidden rounded border border-border bg-muted/30"
       >
         {/* Sonda de existência da imagem de fundo — não renderizada visualmente, só decide se o template tem uma. 404 (template pré-codificado, sem imagem) nunca dispara onLoad, o canvas continua com o fundo cinza padrão. */}
@@ -243,6 +281,8 @@ export function ConvergiaPositionEditor({ template }: { template: ConvergiaTempl
           const position = positions[name];
           if (!position) return null;
           const variable = template.variables.find((candidate) => candidate.name === name);
+          // CONV-003: preview só entra pra template visual, com valor de exemplo preenchido — senão, comportamento de sempre (mostra o nome do campo).
+          const sampleValue = backgroundLoaded ? sampleValues[name]?.trim() : "";
           return (
             <div
               key={name}
@@ -256,10 +296,19 @@ export function ConvergiaPositionEditor({ template }: { template: ConvergiaTempl
               className="absolute flex cursor-move flex-col justify-between rounded border border-primary/60 bg-primary/10 p-1 text-[10px] leading-tight text-foreground"
               title={variable?.description}
             >
-              <span className="truncate font-medium">
-                {name}
-                {variable?.required && <span className="text-destructive"> *</span>}
-              </span>
+              {sampleValue ? (
+                <span
+                  className="overflow-hidden leading-none"
+                  style={{ fontSize: fontSizeToCqw(position.fontSize), fontFamily: position.fontFamily }}
+                >
+                  {sampleValue}
+                </span>
+              ) : (
+                <span className="truncate font-medium">
+                  {name}
+                  {variable?.required && <span className="text-destructive"> *</span>}
+                </span>
+              )}
               <div
                 onPointerDown={(event) => handlePointerDown(event, name, "resize")}
                 className="ml-auto h-2.5 w-2.5 shrink-0 cursor-nwse-resize rounded-sm border border-primary bg-background"
@@ -268,6 +317,12 @@ export function ConvergiaPositionEditor({ template }: { template: ConvergiaTempl
           );
         })}
       </div>
+
+      {backgroundLoaded && (
+        <p className="text-[10px] italic text-muted-foreground">
+          Preview em CSS, aproximado — não é o resultado real do PowerPoint (pixel-perfect fica pra uma etapa futura, ainda não decidida).
+        </p>
+      )}
 
       {fieldOrder.length === 0 && (
         <p className="text-xs text-muted-foreground">Nenhum campo ainda — use &quot;Adicionar campo&quot; acima.</p>
@@ -306,6 +361,14 @@ export function ConvergiaPositionEditor({ template }: { template: ConvergiaTempl
                     ))}
                   </select>
                 </label>
+                {backgroundLoaded && (
+                  <input
+                    value={sampleValues[name] ?? ""}
+                    onChange={(event) => updateSampleValue(name, event.target.value)}
+                    placeholder="valor de exemplo (preview)"
+                    className="w-36 rounded border border-border bg-transparent px-1.5 py-0.5"
+                  />
+                )}
                 <button
                   type="button"
                   onClick={() => handleRemoveField(name)}
