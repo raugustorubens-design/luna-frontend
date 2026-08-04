@@ -483,11 +483,38 @@ export interface ConvergiaTemplateSummary {
   };
 }
 
-/** `layout` (função) do TemplateDescriptor não sobrevive à serialização JSON — nunca chega aqui. */
+/** `layout` (função) do TemplateDescriptor não sobrevive à serialização JSON — nunca chega aqui. Lista já vem unificada (pré-codificados + templates visuais do CONV-001), backend decide o merge. */
 export async function fetchConvergiaTemplates(): Promise<ConvergiaTemplateSummary[]> {
   const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/convergia/templates`);
   const data = await parseJsonOrThrow<{ templates: ConvergiaTemplateSummary[] }>(response);
   return data.templates;
+}
+
+// ---- Templates visuais (CONV-001) ----
+//
+// Um template visual é uma imagem de fundo (o certificado/documento real)
+// sobre a qual campos são posicionados — distinto dos templates
+// pré-codificados que geram o layout do zero. O `templateId` devolvido
+// aqui (`visual_<uuid>`) funciona depois em qualquer rota que já aceita
+// `templateId` (`/templates/:id/positions`, `/transform`) sem tratamento
+// especial no cliente.
+
+export interface ConvergiaVisualTemplateUploadResult {
+  templateId: string;
+  template: ConvergiaTemplateSummary | { templateId: string; name: string; mimeType: string; createdAt: string };
+}
+
+export async function uploadConvergiaVisualTemplate(name: string, image: File): Promise<ConvergiaVisualTemplateUploadResult> {
+  const body = new FormData();
+  body.append("name", name);
+  body.append("image", image);
+  const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/convergia/templates/visual`, { method: "POST", body });
+  return parseJsonOrThrow<ConvergiaVisualTemplateUploadResult>(response);
+}
+
+/** URL direta (não um fetch) — usada como `src` de `<img>`/`background-image` no editor de posicionamento. 404 para qualquer template que não seja visual. */
+export function convergiaTemplateImageUrl(templateId: string): string {
+  return `${LUNA_GATEWAY_BASE_URL}/convergia/templates/${encodeURIComponent(templateId)}/image`;
 }
 
 export interface CanonicalField {
@@ -614,20 +641,28 @@ export async function submitConvergiaTraining(title: string, content: string): P
   return parseJsonOrThrow<ConvergiaTrainingResult>(response);
 }
 
-// ---- Posicionamento de campos (CONV-002) ----
+// ---- Posicionamento de campos (CONV-002, fontSize/fontFamily desde CONV-001) ----
 //
-// Editor de "bolha" arrastável: cada variável do template vira uma caixa
-// posicionável sobre um canvas que representa o slide, em porcentagem da
-// área do slide (0-100), não em EMU — a conversão pra unidade absoluta que
-// pptx-renderer.ts consome (ver PR #25 em luna-core, `sizing: {type:
-// "contain"}`) é responsabilidade do backend ao aplicar o template, não
-// deste editor. `PUT /convergia/templates/:id/positions` ainda não existe
-// em luna-core (só :id/positions de leitura teria sentido simétrico) —
-// bloqueio de Architect registrado no PR #25 (modelo de persistência de
-// templates enviados), ainda não implementado no backend. Chamadas aqui
-// falham com 404 até essa rota existir; o editor deste arquivo continua
-// funcional em memória (arrastar/redimensionar/soltar) independente disso.
+// Editor de "bolha" arrastável: cada campo vira uma caixa posicionável
+// sobre um canvas que representa o slide, em porcentagem da área do slide
+// (0-100), não em EMU — a conversão pra unidade absoluta que
+// pptx-renderer.ts consome é responsabilidade do backend ao aplicar o
+// template, não deste editor. `GET`/`PUT /convergia/templates/:id/positions`
+// já existem em luna-core (persistência via Guardian, mesma coleção
+// genérica de sempre) — atualizado (CONV-001): antes, cada campo vinha só
+// de `template.variables` (pré-declaradas pelo template pré-codificado);
+// agora o usuário também pode adicionar campos livremente via "adicionar
+// campo", necessário para um template visual (imagem de fundo), que não
+// declara variável nenhuma de antemão.
 
+/**
+ * CONV-001: `fontSize`/`fontFamily` são a adição desta rodada — para o
+ * texto renderizado bater visualmente com o template real (ex. combinar
+ * com a fonte do certificado original). `fontFamily` é sempre uma das
+ * opções de `CONVERGIA_SAFE_FONTS` abaixo, nunca texto livre: são as
+ * fontes que o `pptxgenjs`/PowerPoint realmente suportam de forma
+ * confiável entre plataformas.
+ */
 export interface ConvergiaFieldPosition {
   name: string;
   /** Porcentagem da largura do slide (0-100), canto superior esquerdo da caixa. */
@@ -638,7 +673,17 @@ export interface ConvergiaFieldPosition {
   width: number;
   /** Porcentagem da altura do slide (0-100). */
   height: number;
+  /** Tamanho da fonte em pontos. */
+  fontSize: number;
+  /** Nome da fonte — uma das opções de CONVERGIA_SAFE_FONTS. */
+  fontFamily: string;
 }
+
+/** Fontes seguras para PPTX — todas nativas do Office/PowerPoint em qualquer plataforma, nunca precisam de embed. Lista curta de propósito: o editor nunca aceita texto livre aqui. */
+export const CONVERGIA_SAFE_FONTS = ["Arial", "Calibri", "Times New Roman", "Verdana", "Georgia", "Tahoma"] as const;
+export type ConvergiaSafeFont = (typeof CONVERGIA_SAFE_FONTS)[number];
+export const CONVERGIA_DEFAULT_FONT_SIZE = 12;
+export const CONVERGIA_DEFAULT_FONT_FAMILY: ConvergiaSafeFont = "Arial";
 
 export async function fetchConvergiaTemplatePositions(templateId: string): Promise<ConvergiaFieldPosition[]> {
   const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/convergia/templates/${encodeURIComponent(templateId)}/positions`);
