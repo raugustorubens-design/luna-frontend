@@ -28,14 +28,23 @@
 // `saveConvergiaTemplatePositions`) — existe só pra essa sessão de
 // edição. O texto de exemplo é renderizado na caixa com o `fontSize`/
 // `fontFamily` reais do campo via CSS, usando `cqw` (container query
-// width, `container-type: inline-size` no canvas): o slide padrão do
-// `pptxgenjs` é 10in × 5.625in = 720pt de largura (`LAYOUT_16x9`,
-// mesmo default que `pptx-renderer.ts` usa), então `fontSize` em pt
-// vira `(fontSize / 720) * 100` unidades de `cqw` — escala com o
-// tamanho real do canvas na tela, sem precisar de ResizeObserver. É
+// width, `container-type: inline-size` no canvas): `fontSize` em pt vira
+// `(fontSize / larguraRealDoSlideEmPt) * 100` unidades de `cqw` — escala
+// com o tamanho real do canvas na tela, sem precisar de ResizeObserver. É
 // aproximação de CSS, não o resultado real do PowerPoint (fontes
 // diferentes têm métricas diferentes, sem kerning/hinting real) — texto
 // de ajuda na UI deixa isso explícito.
+//
+// Fix (slide não nasce mais sempre 16:9): a largura real do slide em
+// pontos vem de `template.slideSize` (luna-core, `GET /convergia/templates`
+// — calculada a partir da proporção real da imagem enviada, não mais um
+// valor fixo de 720pt/16:9 assumido aqui). `fontSizeToCqw` continua com a
+// mesma fórmula de sempre, só a base passou a ser dinâmica — só a régua
+// estava errada, não a conta. `SLIDE_WIDTH_PT_FALLBACK` (720, mesmo valor
+// fixo de antes) só entra quando `template.slideSize` não existe: template
+// pré-codificado, ou template visual enviado antes desta correção (sem
+// dimensão de imagem salva) — mesmo comportamento de antes para esses
+// dois casos, não quebra nada que já funcionava.
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,12 +62,12 @@ const DEFAULT_WIDTH = 28;
 const DEFAULT_HEIGHT = 12;
 const MIN_WIDTH = 6;
 const MIN_HEIGHT = 4;
-/** `pptxgenjs`'s default layout (LAYOUT_16x9, ver pptx-renderer.ts): 10in × 5.625in = 720pt de largura. Base da conversão pt → `cqw` do preview (CONV-003). */
-const SLIDE_WIDTH_PT = 720;
+/** `pptxgenjs`'s default layout (LAYOUT_16x9): 10in × 5.625in = 720pt de largura — usado só quando `template.slideSize` não está disponível (template pré-codificado, ou visual enviado antes do fix de slide real). */
+const SLIDE_WIDTH_PT_FALLBACK = 720;
 
-/** `fontSize` (pt) do campo, convertido pra `cqw` do canvas (`container-type: inline-size`) — escala com o tamanho real renderizado, sem JS de resize. */
-function fontSizeToCqw(fontSizePt: number): string {
-  return `${(fontSizePt / SLIDE_WIDTH_PT) * 100}cqw`;
+/** `fontSize` (pt) do campo, convertido pra `cqw` do canvas (`container-type: inline-size`) — escala com o tamanho real renderizado, sem JS de resize. `slideWidthPt` é a largura real do slide (`template.slideSize`), não mais um valor fixo — a fórmula em si não mudou. */
+function fontSizeToCqw(fontSizePt: number, slideWidthPt: number): string {
+  return `${(fontSizePt / slideWidthPt) * 100}cqw`;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -98,6 +107,10 @@ export function ConvergiaPositionEditor({ template }: { template: ConvergiaTempl
   const dragRef = useRef<DragMode | null>(null);
 
   const backgroundImageUrl = convergiaTemplateImageUrl(template.id);
+  const slideWidthPt = template.slideSize?.widthPt ?? SLIDE_WIDTH_PT_FALLBACK;
+  /** Proporção real do slide (luna-core, `pptx-renderer.ts`) — mesma razão largura/altura da imagem enviada, calculada em pontos, mas equivalente à razão em pixel. `aspect-video` (16:9 fixo) só entra como fallback via className, quando não há imagem carregada ou dimensão conhecida — ver `aspectRatioStyle` abaixo. */
+  const aspectRatioStyle =
+    backgroundLoaded && template.slideSize ? { aspectRatio: `${template.slideSize.widthPt} / ${template.slideSize.heightPt}` } : undefined;
 
   useEffect(() => {
     let cancelled = false;
@@ -267,11 +280,12 @@ export function ConvergiaPositionEditor({ template }: { template: ConvergiaTempl
         onPointerUp={handlePointerUp}
         style={{
           containerType: "inline-size",
+          ...aspectRatioStyle,
           ...(backgroundLoaded
             ? { backgroundImage: `url(${backgroundImageUrl})`, backgroundSize: "cover", backgroundPosition: "center" }
             : undefined),
         }}
-        className="relative aspect-video w-full select-none overflow-hidden rounded border border-border bg-muted/30"
+        className={`relative w-full select-none overflow-hidden rounded border border-border bg-muted/30 ${aspectRatioStyle ? "" : "aspect-video"}`}
       >
         {/* Sonda de existência da imagem de fundo — não renderizada visualmente, só decide se o template tem uma. 404 (template pré-codificado, sem imagem) nunca dispara onLoad, o canvas continua com o fundo cinza padrão. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -299,7 +313,7 @@ export function ConvergiaPositionEditor({ template }: { template: ConvergiaTempl
               {sampleValue ? (
                 <span
                   className="overflow-hidden leading-none"
-                  style={{ fontSize: fontSizeToCqw(position.fontSize), fontFamily: position.fontFamily }}
+                  style={{ fontSize: fontSizeToCqw(position.fontSize, slideWidthPt), fontFamily: position.fontFamily }}
                 >
                   {sampleValue}
                 </span>
