@@ -105,3 +105,134 @@ como fazer.
   `pnpm-lock.yaml`, já commitado) — removido antes do commit, não faz
   parte deste PR.
 - Merge, "Ready for review" — branch segue draft, aguardando revisão.
+
+## 2026-08-07 — ADR-021 Fase 1: Wizard PWA de coleta de ronda (`/ronda`)
+
+**Contexto:** superfície nova e separada do Forge (ADR-021, Decisão 1) —
+não é uma aba dentro do Forge, é uma rota própria, mobile-first,
+instalável como PWA, com fila offline. Escopo desta entrega: exatamente
+a Fase 1 do ADR (wizard de coleta com fila offline e reenvio automático,
+gravidade escolhida manualmente) — nada de Fase 2 em diante.
+
+### O que foi entregue
+
+- **`app/ronda/{layout,page}.tsx`** — rota própria, `manifest`/`viewport`/
+  `apple-touch-icon` próprios (sobrescrevem os do layout raiz só nesta
+  subárvore, sem afetar `/forge` nem o Modo Usuário).
+  `components/mode-switcher.tsx` ajustado para também esconder o link
+  "Dev Mode" em `/ronda` (mesma lógica que já esconde em `/forge`).
+- **`public/ronda-manifest.json`** + **`public/ronda-icons/{icon-192,icon-512}.png`**
+  (gerados por um encoder PNG mínimo escrito nesta sessão, sem dependência
+  nova — `zlib` nativo do Node; ícone geométrico simples, arte
+  placeholder, não deliverable de design) — `start_url: "/ronda"`,
+  `display: "standalone"`, ícones `any`+`maskable` nos dois tamanhos.
+- **`public/ronda-sw.js`** — service worker escrito à mão (sem
+  workbox/next-pwa, nenhuma das duas é dependência deste projeto hoje):
+  cache do app shell (navegação network-first com fallback pra cache;
+  assets cache-first com atualização em segundo plano), escopo restrito
+  a `/ronda` no registro. Nunca intercepta `POST` — o envio da ronda
+  sempre vai direto à rede; a fila offline é responsabilidade separada
+  (IndexedDB), não cache HTTP.
+- **`lib/ronda/`** — `types.ts` (mesmo modelo canônico de
+  `luna-core/src/convergia/ronda/contracts.ts`, cópia deliberada, não
+  import cross-repo), `db.ts` (fila em IndexedDB nativo, sem lib nova),
+  `queue.ts` (reenvio automático no evento `online` + na reabertura do
+  app, um item de cada vez, uma falha não aborta o resto da fila),
+  `api-client.ts` (`POST /convergia/ronda`), `photo.ts` (compressão
+  client-side via canvas — redimensiona pro lado maior até 1280px,
+  recomprime JPEG qualidade 0.7, antes de guardar/enviar — câmera nativa
+  de celular real produz fotos de vários MB, inviáveis pra IndexedDB e
+  pro payload JSON em rede de campo ruim), `use-ronda-queue.ts` (hook
+  reativo pra contagem pendente/confirmado).
+- **`components/ronda/`** — `ronda-wizard.tsx` (orquestrador dos 3
+  blocos), `finding-card.tsx` (um card por categoria de risco, seletor de
+  estado de 3 opções, formulário do achado só aparece quando
+  "identificado" — foto nunca obrigatória, campo de texto nativo
+  `<textarea>` sem componente customizado, pra não bloquear o teclado
+  nativo/ditado por voz), `queue-status-bar.tsx` (contagem visível de
+  pendente/enviando/confirmado/falhou, nunca silencioso),
+  `register-service-worker.tsx`.
+- **`lib/forge/api-client.ts`** — `LUNA_GATEWAY_BASE_URL` exportado (era
+  `const` privado) pra `lib/ronda/api-client.ts` reaproveitar a mesma
+  resolução de base URL em vez de duplicá-la.
+
+### Verificado nesta sessão
+
+- `npm run typecheck` — limpo.
+- `npm run test:constitution` — `Constitution checks passed (60 files
+  scanned)`.
+- `npm test` — **30/30** (glob do script `test` em `package.json`
+  ampliado pra incluir `lib/ronda/__tests__/*.test.ts`, que antes não
+  rodava nada fora de `lib/forge/__tests__`). 6 testes novos, lógica pura
+  extraída pra ser testável sem DOM/IndexedDB: `metadataComplete`
+  (`types.test.ts`), `pendingCategories` (`types.test.ts`),
+  `summarizeQueue` (`db.test.ts`). **Nota sobre um teste pré-existente,
+  não relacionado a esta entrega:** `lib/forge/__tests__/git.test.ts`
+  ("readLocalGitStatus reports the current branch...") falhou de forma
+  intermitente nesta sessão com `signing server returned status 503` —
+  confirmei que é um flake do serviço de assinatura de commit deste
+  sandbox, não algo que esta entrega introduziu, revertendo todas as
+  mudanças (`git stash`) e rodando só esse teste isolado: falhou do mesmo
+  jeito, sem nenhuma mudança minha aplicada.
+- **Verificação funcional real, via Playwright contra o servidor de
+  desenvolvimento local (`npm run dev`), não suposição:**
+  - Manifest: `<link rel="manifest">` aponta pro `ronda-manifest.json`
+    real, que responde com `name`/`start_url: "/ronda"`/
+    `display: "standalone"`/ícones 192×192 e 512×512 — os dois PNGs
+    realmente respondem `image/png`. `apple-touch-icon` e `theme-color`
+    presentes (instalabilidade iOS).
+  - Service worker: `navigator.serviceWorker.getRegistration("/ronda")`
+    confirma registro ativo, `scope` restrito a `/ronda`.
+  - Wizard preenchido de ponta a ponta com dado sintético real: Bloco A
+    completo; Bloco B com as 7 categorias — 6 marcadas "considerado
+    inexistente", 1 marcada "identificado" com uma foto real (JPEG
+    genuíno decodificável, não um mock) enviada via
+    `input[type=file].setInputFiles`, exercitando de verdade o caminho
+    `compressPhoto()` (decode via `<canvas>`, redimensiona, recomprime)
+    — a miniatura comprimida aparece no card, confirmando que o
+    pipeline de foto funciona ponta a ponta, não só que o arquivo foi
+    aceito.
+  - **Teste de modo avião real:** `browserContext.setOffline(true)`
+    *antes* de clicar "Concluir ronda". Confirmado via leitura direta do
+    IndexedDB (`indexedDB.open("luna-ronda")`) que a ronda ficou salva
+    localmente com `status: "pending"` — e a barra de status na tela
+    mostrou "1 pendente" (nunca silencioso, como o ADR exige).
+  - **Reenvio automático:** sem backend `luna-core` real alcançável
+    neste sandbox, interceptei `POST /convergia/ronda` via
+    `page.route()` (devolvendo o mesmo shape de resposta que o PR irmão
+    do `luna-core`, `#35`, realmente devolve — `{ronda: {rondaId, ...}}`)
+    — não fingi que testei contra o backend real, deixei isso explícito.
+    Reconectei (`setOffline(false)`) e disparei o evento `online`
+    (`window.dispatchEvent(new Event("online"))`, mesmo evento que
+    `registerAutoSync` escuta em produção) **sem nenhuma ação manual
+    além disso** — confirmado via IndexedDB que o item mudou pra
+    `status: "synced"` com o `rondaId` do servidor, e a barra de status
+    passou a mostrar "1 confirmada no servidor".
+  - **Gate de conclusão (ADR-021 "não avaliado bloqueia a conclusão"):**
+    testado deixando 1 de 7 categorias sem avaliar — confirmado que o
+    botão "Concluir ronda" fica desabilitado (`isDisabled() === true`) e
+    que o aviso na tela lista corretamente a categoria pendente certa
+    ("Máquinas e Equipamentos"), não uma genérica.
+  - Capturas de tela reais anexadas ao PR (Bloco B preenchido, tela de
+    gate bloqueado, tela final "Ronda salva... já confirmada no
+    servidor").
+
+### O que NÃO foi feito (fora de escopo desta fase, por instrução explícita)
+
+- Geração de relatório PPT — Fase 2.
+- Qualquer separação sensível/lógica ou persistência em `memoria_luna` —
+  Fase 3.
+- Leitura de imagem por IA, gravidade sugerida, tokenização de
+  cliente/local — Fase 4.
+- PDF/BI — Fase 5.
+- Teste de instalação PWA num dispositivo Android/iOS real — verificado
+  só via os critérios técnicos de instalabilidade (manifest válido,
+  ícones corretos, service worker ativo, `apple-touch-icon` presente),
+  não via o prompt real "adicionar à tela inicial" de um navegador móvel
+  de verdade, que este sandbox não tem como abrir.
+- Verificação contra o backend `luna-core` real — o PR irmão
+  (`raugustorubens-design/luna-core#35`) ainda está em revisão; o reenvio
+  automático foi verificado com o `POST /convergia/ronda` interceptado
+  (mockado com o shape real de resposta), não contra o Guardian de
+  produção.
+- Merge, "Ready for review" — branch segue draft, aguardando revisão.

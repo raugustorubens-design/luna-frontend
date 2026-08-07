@@ -33,7 +33,8 @@ import type { MemoryItem } from "./memory";
 const PRODUCTION_LUNA_GATEWAY_BASE_URL = "https://uvicorn-main-production-92f8.up.railway.app/api";
 const DEVELOPMENT_LUNA_GATEWAY_BASE_URL = "http://localhost:8080/api";
 
-const LUNA_GATEWAY_BASE_URL =
+/** Exportado para outros clientes HTTP do mesmo backend (ex. lib/ronda/api-client.ts, ADR-021) reaproveitarem a mesma resolução de base URL em vez de duplicá-la. */
+export const LUNA_GATEWAY_BASE_URL =
   process.env.NEXT_PUBLIC_LUNA_GATEWAY_BASE_URL ??
   (process.env.NODE_ENV === "production" ? PRODUCTION_LUNA_GATEWAY_BASE_URL : DEVELOPMENT_LUNA_GATEWAY_BASE_URL);
 

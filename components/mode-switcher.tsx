@@ -5,7 +5,9 @@ import { usePathname } from "next/navigation";
 
 export function ModeSwitcher() {
   const pathname = usePathname();
-  if (pathname?.startsWith("/forge")) return null;
+  // /ronda (ADR-021) é uma superfície própria, standalone, instalável como
+  // PWA — sem link de Dev Mode nem qualquer navegação do Modo Usuário.
+  if (pathname?.startsWith("/forge") || pathname?.startsWith("/ronda")) return null;
 
   return (
     <Link
