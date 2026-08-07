@@ -11,7 +11,7 @@
     "start": "NODE_ENV=production tsx server.ts",
     "lint": "next lint",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test lib/forge/__tests__/*.test.ts",
+    "test": "tsx --test lib/forge/__tests__/*.test.ts lib/ronda/__tests__/*.test.ts",
     "test:constitution": "node scripts/constitution-check.mjs"
   },
   "dependencies": {
