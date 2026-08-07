@@ -24,7 +24,7 @@ function ProjectSelector() {
     <select
       value={project}
       onChange={(event) => setProject(event.target.value)}
-      className="rounded border border-border bg-transparent px-1.5 py-0.5 text-xs"
+      className="rounded border border-border bg-transparent px-1.5 py-0.5 text-xs [color-scheme:dark]"
       title="Projeto ativo"
     >
       {KNOWN_FORGE_PROJECTS.map((name) => (

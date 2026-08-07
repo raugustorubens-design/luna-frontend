@@ -352,7 +352,7 @@ export function ConvergiaPositionEditor({ template }: { template: ConvergiaTempl
                   <select
                     value={position.fontFamily}
                     onChange={(event) => updateField(name, { fontFamily: event.target.value })}
-                    className="rounded border border-border bg-transparent px-1 py-0.5"
+                    className="rounded border border-border bg-transparent px-1 py-0.5 [color-scheme:dark]"
                   >
                     {CONVERGIA_SAFE_FONTS.map((font) => (
                       <option key={font} value={font}>

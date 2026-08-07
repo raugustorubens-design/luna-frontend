@@ -360,7 +360,7 @@ function TransformStep({ file, parseResult }: { file: File | null; parseResult: 
           <select
             value={templateId}
             onChange={(event) => setTemplateId(event.target.value)}
-            className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs"
+            className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs [color-scheme:dark]"
           >
             {templates.map((template) => (
               <option key={`${template.id}-v${template.version}`} value={template.id}>
@@ -423,7 +423,7 @@ function PositionStep() {
           <select
             value={templateId}
             onChange={(event) => setTemplateId(event.target.value)}
-            className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs"
+            className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs [color-scheme:dark]"
           >
             {templates.map((template) => (
               <option key={`${template.id}-v${template.version}`} value={template.id}>
