@@ -236,3 +236,98 @@ gravidade escolhida manualmente) — nada de Fase 2 em diante.
   (mockado com o shape real de resposta), não contra o Guardian de
   produção.
 - Merge, "Ready for review" — branch segue draft, aguardando revisão.
+
+## 2026-08-07 — Fix: editor de posicionamento (CONV-001/002) usava régua de slide fixa (720pt, 16:9), não a proporção real da imagem do template
+
+**Contexto:** metade `luna-frontend` de um fix ponta a ponta — o par
+`luna-core` (render + upload) sai num PR irmão nesse repositório, os dois
+são necessários juntos para o comportamento ficar correto. Diagnóstico
+já fechado antes desta sessão (não redescoberto aqui, ver PR irmão):
+o slide de um template visual sempre nascia 16:9 fixo no `luna-core`, e
+`slide.background` esticava a imagem de fundo pra cobrir esse tamanho —
+uma carteirinha (proporção bem diferente de 16:9) saía distorcida no
+`.pptx` final. Consequência aqui: `SLIDE_WIDTH_PT = 720` estava
+hardcoded em `convergia-position-editor.tsx`, e o canvas usava
+`aspect-video` (16:9 fixo) — então mesmo depois do fix do `luna-core`, o
+editor continuaria mostrando/calculando com a régua errada.
+
+### O que foi entregue
+
+1. **`lib/forge/api-client.ts`**: `ConvergiaTemplateSummary.slideSize?: {
+   widthPt, heightPt }` — novo campo opcional, espelhando o que
+   `GET /convergia/templates` do `luna-core` agora expõe por template
+   visual com dimensão de imagem conhecida. `undefined` para templates
+   pré-codificados e para templates visuais enviados antes do fix (sem
+   dimensão salva) — tratado como "regra ainda não disponível", nunca
+   como erro.
+2. **`convergia-position-editor.tsx`**:
+   - `SLIDE_WIDTH_PT` (constante fixa, 720) virou
+     `SLIDE_WIDTH_PT_FALLBACK` — só usada quando `template.slideSize`
+     não existe. A largura real (`slideWidthPt`) agora vem de
+     `template.slideSize?.widthPt ?? SLIDE_WIDTH_PT_FALLBACK`.
+   - `fontSizeToCqw` passou a receber a largura do slide como parâmetro
+     em vez de ler a constante do módulo — **a fórmula em si não
+     mudou** (`(fontSize / larguraDoSlide) * 100` unidades de `cqw`),
+     só a fonte do número, exatamente como pedido.
+   - O canvas trocou `aspect-video` (classe fixa) por
+     `style={{ aspectRatio: "${widthPt} / ${heightPt}" }}` quando o
+     template tem imagem de fundo carregada (`backgroundLoaded`) **e**
+     `slideSize` conhecido; `aspect-video` continua como fallback via
+     className nos outros dois casos (sem imagem, ou template sem
+     dimensão salva) — mesmo espírito do item 5 do PR irmão no
+     `luna-core`, não quebra o caso sem imagem nem o caso de template
+     antigo.
+   - Usei `slideSize` (pontos) para a proporção do canvas, não
+     `widthPx`/`heightPx` (pixel) — são a mesma razão largura/altura
+     (proporção é invariante à unidade), e `slideSize` já é o único dado
+     de dimensão que a API expõe pro frontend (o `luna-core` não expõe
+     pixel bruto na rota de listagem, só pontos — decisão dele, ver PR
+     irmão). Não pedi/inventei um campo novo pra isso.
+
+### Verificado nesta sessão
+
+- `npm run typecheck` — limpo.
+- `npm run test:constitution` — `Constitution checks passed (60 files
+  scanned)`.
+- `npm test` — 30/30 (suíte existente, `lib/forge/__tests__` +
+  `lib/ronda/__tests__`; esta mudança é só de componente, sem teste de
+  unidade dedicado no repositório para esse tipo de arquivo — mesma
+  convenção já em uso aqui, verificação real foi via Playwright, abaixo).
+- **Playwright, contra o app real** (`tsx server.ts` local, porta 3100,
+  `NEXT_PUBLIC_LUNA_GATEWAY_BASE_URL` no valor padrão de dev que já
+  aponta pra `localhost:8080/api` — nenhuma env var nova precisou ser
+  configurada): um servidor HTTP mínimo, escrito só para esta sessão de
+  verificação (não faz parte do diff), respondeu `GET /convergia/templates`
+  /`/templates/:id/image`/`/templates/:id/positions` simulando o
+  `luna-core` já com o fix do PR irmão — imagem real de carteirinha
+  (640x1010px, gerada com `sharp`, mesmo padrão do PR irmão) e
+  `slideSize` calculado com a mesma fórmula que `luna-core` usa
+  (`slide-layout.ts`). Naveguei até `/forge` → aba "Convergia" → aba
+  "Posicionamento" (template mockado auto-selecionado) e medi
+  `getBoundingClientRect()`/`getComputedStyle()` do canvas:
+  - **Proporção real**: `aspectRatio` computado = `"456.238 / 720"`
+    (o `slideSize` mockado), proporção medida do canvas renderizado =
+    `0.6336633663366337`, idêntica à proporção real da imagem
+    (`640/1010 = 0.6336633663366337`) — diferença `0`. Não mais forçado
+    em 16:9.
+  - **Fallback intacto**: repeti com um segundo template mockado sem
+    `slideSize` (simulando um template enviado antes do fix) — o canvas
+    caiu de volta em `aspect-ratio: 16 / 9` via a classe `aspect-video`,
+    proporção medida `1.7777...`, igual a `16/9` — comportamento
+    idêntico ao de antes desta correção, não quebrado.
+  - Capturas de tela salvas localmente durante a verificação (não fazem
+    parte deste PR — só a evidência foi usada aqui).
+
+### O que NÃO foi feito
+
+- Nenhuma mudança na fórmula de `fontSizeToCqw` — só a fonte da largura
+  do slide passou a ser dinâmica, a conta em si é a mesma de sempre.
+- Nenhum controle de zoom manual.
+- Nenhuma mudança em como posição/tamanho em porcentagem são
+  persistidos/lidos (`ConvergiaFieldPosition` continua igual).
+- Merge, "Ready for review" — branch segue draft, aguardando revisão.
+  Depende do PR irmão em `luna-core` para o comportamento ficar correto
+  ponta a ponta — sem ele, `GET /convergia/templates` nunca devolve
+  `slideSize`, e este editor sempre cai no fallback de 720pt/16:9 (o que
+  não é um bug deste PR — é o mesmo comportamento de hoje, preservado de
+  propósito).

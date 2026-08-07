@@ -482,6 +482,16 @@ export interface ConvergiaTemplateSummary {
     description: string;
     regulatoryStatus: "validated" | "pending_specialist_review" | "not_applicable";
   };
+  /**
+   * Tamanho real do slide em pontos — fix do slide de template visual que
+   * nascia sempre 16:9 fixo (720pt de largura) e distorcia imagens de
+   * outra proporção (luna-core, `pptx-renderer.ts`). Presente só para
+   * templates visuais com dimensão de imagem conhecida; `undefined` para
+   * templates pré-codificados e para templates visuais enviados antes
+   * dessa correção — `ConvergiaPositionEditor` cai no fallback de 720pt
+   * (16:9) nesses casos, mesmo comportamento de antes.
+   */
+  slideSize?: { widthPt: number; heightPt: number };
 }
 
 /** `layout` (função) do TemplateDescriptor não sobrevive à serialização JSON — nunca chega aqui. Lista já vem unificada (pré-codificados + templates visuais do CONV-001), backend decide o merge. */
