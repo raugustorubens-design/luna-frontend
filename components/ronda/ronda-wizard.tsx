@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import {
   emptyMetadata,
   emptyFindings,
@@ -119,6 +120,9 @@ export function RondaWizard() {
                 placeholder="ex. manhã, tarde, noite"
               />
             </label>
+            <Link href="/ronda/historico" className="mt-1 text-xs text-cyan-600 underline dark:text-cyan-400">
+              Ver rondas anteriores
+            </Link>
           </div>
         )}
 
