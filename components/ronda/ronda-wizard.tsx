@@ -16,6 +16,7 @@ import { enqueueRonda } from "@/lib/ronda/db";
 import { useRondaQueue } from "@/lib/ronda/use-ronda-queue";
 import { QueueStatusBar } from "./queue-status-bar";
 import { FindingCard } from "./finding-card";
+import { ThemeToggle } from "./theme-toggle";
 
 type Step = "A" | "B" | "C" | "done";
 
@@ -54,64 +55,67 @@ export function RondaWizard() {
     <div className="flex min-h-dvh flex-col">
       <QueueStatusBar counts={counts} onSyncNow={() => void syncNow()} />
 
-      <header className="border-b border-white/10 px-4 py-3">
-        <h1 className="text-base font-semibold text-slate-100">Ronda Fotográfica</h1>
-        <p className="text-xs text-slate-400">
-          {step === "A" && "Etapa 1 de 3 — Dados da ronda"}
-          {step === "B" && "Etapa 2 de 3 — Categorias de risco"}
-          {step === "C" && "Etapa 3 de 3 — Encerramento"}
-          {step === "done" && "Ronda registrada"}
-        </p>
+      <header className="flex items-start justify-between gap-2 border-b border-black/10 px-4 py-3 dark:border-white/10">
+        <div>
+          <h1 className="text-base font-semibold text-slate-900 dark:text-slate-100">Ronda Fotográfica</h1>
+          <p className="text-xs text-slate-600 dark:text-slate-400">
+            {step === "A" && "Etapa 1 de 3 — Dados da ronda"}
+            {step === "B" && "Etapa 2 de 3 — Categorias de risco"}
+            {step === "C" && "Etapa 3 de 3 — Encerramento"}
+            {step === "done" && "Ronda registrada"}
+          </p>
+        </div>
+        <ThemeToggle />
       </header>
 
       <main className="flex-1 overflow-y-auto px-4 py-4">
         {step === "A" && (
           <div className="flex flex-col gap-3">
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
+            <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
               Título
               <input
                 type="text"
                 value={metadata.titulo}
                 onChange={(event) => setMetadata({ ...metadata, titulo: event.target.value })}
-                className="rounded border border-white/15 bg-transparent px-2 py-2 text-sm text-slate-100 [color-scheme:dark]"
+                className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-slate-900 [color-scheme:light] dark:border-white/15 dark:text-slate-100 dark:[color-scheme:dark]"
                 placeholder="ex. Ronda SSMA — Turno A"
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
+            <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
               Data
               <input
                 type="date"
                 value={metadata.data}
                 onChange={(event) => setMetadata({ ...metadata, data: event.target.value })}
-                className="rounded border border-white/15 bg-transparent px-2 py-2 text-sm text-slate-100 [color-scheme:dark]"
+                className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-slate-900 [color-scheme:light] dark:border-white/15 dark:text-slate-100 dark:[color-scheme:dark]"
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
+            <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
               Local / Planta
               <input
                 type="text"
                 value={metadata.local}
                 onChange={(event) => setMetadata({ ...metadata, local: event.target.value })}
-                className="rounded border border-white/15 bg-transparent px-2 py-2 text-sm text-slate-100 [color-scheme:dark]"
+                className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-slate-900 [color-scheme:light] dark:border-white/15 dark:text-slate-100 dark:[color-scheme:dark]"
                 placeholder="ex. Unidade Sylvamo/Mogi Guaçu"
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
+            <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
               Responsável
               <input
                 type="text"
                 value={metadata.responsavel}
                 onChange={(event) => setMetadata({ ...metadata, responsavel: event.target.value })}
-                className="rounded border border-white/15 bg-transparent px-2 py-2 text-sm text-slate-100 [color-scheme:dark]"
+                className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-slate-900 [color-scheme:light] dark:border-white/15 dark:text-slate-100 dark:[color-scheme:dark]"
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
+            <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
               Turno
               <input
                 type="text"
                 value={metadata.turno}
                 onChange={(event) => setMetadata({ ...metadata, turno: event.target.value })}
-                className="rounded border border-white/15 bg-transparent px-2 py-2 text-sm text-slate-100 [color-scheme:dark]"
+                className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-slate-900 [color-scheme:light] dark:border-white/15 dark:text-slate-100 dark:[color-scheme:dark]"
                 placeholder="ex. manhã, tarde, noite"
               />
             </label>
@@ -128,20 +132,21 @@ export function RondaWizard() {
 
         {step === "C" && (
           <div className="flex flex-col gap-3">
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
+            <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
               Observações gerais (opcional)
               <textarea
                 value={closing.observacoesGerais ?? ""}
                 onChange={(event) => setClosing({ ...closing, observacoesGerais: event.target.value })}
                 rows={4}
-                className="rounded border border-white/15 bg-transparent px-2 py-2 text-sm text-slate-100"
+                className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-slate-900 dark:border-white/15 dark:text-slate-100"
               />
             </label>
-            <label className="flex items-center gap-2 text-xs text-slate-300">
+            <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300">
               <input
                 type="checkbox"
                 checked={closing.incluirGraficoResumo}
                 onChange={(event) => setClosing({ ...closing, incluirGraficoResumo: event.target.checked })}
+                className="[color-scheme:light] dark:[color-scheme:dark]"
               />
               Incluir gráfico-resumo no relatório
             </label>
@@ -162,7 +167,7 @@ export function RondaWizard() {
         {step === "done" && (
           <div className="flex flex-col items-center gap-3 py-10 text-center">
             <div className="text-4xl">✓</div>
-            <p className="text-sm text-slate-200">
+            <p className="text-sm text-slate-800 dark:text-slate-200">
               {savedLocally ? "Ronda salva neste dispositivo." : "Ronda registrada."}
               <br />
               {counts.pending > 0 ? "Enviando ao servidor assim que houver rede — acompanhe na barra acima." : "Já confirmada no servidor."}
@@ -175,12 +180,12 @@ export function RondaWizard() {
       </main>
 
       {step !== "done" && (
-        <footer className="flex items-center justify-between gap-2 border-t border-white/10 px-4 py-3">
+        <footer className="flex items-center justify-between gap-2 border-t border-black/10 px-4 py-3 dark:border-white/10">
           <button
             type="button"
             disabled={step === "A"}
             onClick={() => setStep(step === "C" ? "B" : "A")}
-            className="rounded border border-white/15 px-4 py-2 text-sm text-slate-300 disabled:opacity-30"
+            className="rounded border border-black/15 px-4 py-2 text-sm text-slate-700 disabled:opacity-30 dark:border-white/15 dark:text-slate-300"
           >
             Voltar
           </button>

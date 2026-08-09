@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { RegisterServiceWorker } from "@/components/ronda/register-service-worker";
+import { RondaThemeProvider } from "@/components/ronda/theme-provider";
 
 /**
  * Superfície nova e separada do Forge (ADR-021, Decisão 1) — mobile-first,
@@ -23,7 +24,9 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0a0c10",
+  // "Midnight", mesma cor de fundo escuro padrão do tema (ver theme-provider.tsx)
+  // — cor da UI do navegador/SO, não muda com a alternância claro/escuro em si.
+  themeColor: "#1E2761",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -32,9 +35,9 @@ export const viewport: Viewport = {
 
 export default function RondaLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-dvh bg-[#0a0c10] text-slate-100">
+    <RondaThemeProvider>
       <RegisterServiceWorker />
       {children}
-    </div>
+    </RondaThemeProvider>
   );
 }

@@ -13,7 +13,7 @@ export function QueueStatusBar({ counts, onSyncNow }: { counts: QueueCounts; onS
   const hasPending = counts.pending > 0 || counts.error > 0;
 
   return (
-    <div className="flex items-center justify-between gap-2 border-b border-white/10 bg-black/30 px-4 py-2 text-xs">
+    <div className="flex items-center justify-between gap-2 border-b border-black/10 bg-black/5 px-4 py-2 text-xs dark:border-white/10 dark:bg-black/30">
       <div className="flex flex-wrap items-center gap-3">
         <span className="flex items-center gap-1.5">
           <span className={`h-2 w-2 rounded-full ${counts.pending > 0 ? "bg-amber-400" : "bg-transparent"}`} />
@@ -40,7 +40,7 @@ export function QueueStatusBar({ counts, onSyncNow }: { counts: QueueCounts; onS
         <button
           type="button"
           onClick={onSyncNow}
-          className="shrink-0 rounded border border-white/20 px-2 py-1 text-[11px] text-slate-200 hover:border-cyan-400 hover:text-cyan-300"
+          className="shrink-0 rounded border border-black/20 px-2 py-1 text-[11px] text-slate-800 hover:border-cyan-500 hover:text-cyan-600 dark:border-white/20 dark:text-slate-200 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
         >
           Tentar enviar agora
         </button>

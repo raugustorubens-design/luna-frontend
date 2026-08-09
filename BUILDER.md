@@ -429,4 +429,159 @@ não mexer no campo de foto do wizard de ronda (`finding-card.tsx`), que
   convenção já usada nas duas entradas anteriores deste arquivo — não
   criei infraestrutura de teste E2E nova sem instrução explícita para
   isso.
+
+## 2026-08-09 — Tema claro/escuro alternável no wizard de ronda (`/ronda`)
+
+**Contexto:** instrução explícita, escopo restrito à rota `/ronda`
+(`app/ronda/`, `components/ronda/`) — Forge não tocado. Escuro é o
+padrão do produto; alternância manual via botão, preferência persistida.
+
+### O que foi entregue
+
+- **`tailwind.config.ts`**: `darkMode: "class"` — não existia antes
+  (nenhum lugar do repositório usava `dark:`), estratégia certa porque a
+  troca é manual, não por `prefers-color-scheme`.
+- **`lib/ronda/theme.ts`**: `RondaTheme`/`RONDA_THEME_STORAGE_KEY`
+  (`"luna-ronda-theme"`), módulo mínimo, sem lógica.
+- **`components/ronda/theme-provider.tsx`** (novo): `RondaThemeProvider`
+  + hook `useRondaTheme()`. **Achado de arquitetura relevante,
+  documentado pra quem for mexer nisso depois:** o Tailwind gera o
+  seletor de `dark:` como `.dark :is(...)` — um combinador de
+  descendente, que **não bate quando a classe `dark` e a classe
+  `dark:algo` estão no mesmo elemento**. Por isso o toggle vive num
+  elemento pai (`id="ronda-theme-root"`, só a classe `dark`, sem estilo
+  visual) e as classes visuais (`bg-[#F4F6FB] dark:bg-[#1E2761]` etc.)
+  vivem num filho (`id="ronda-root"`). Descobri isso porque a primeira
+  versão (tudo numa `<div>` só) passou no `typecheck` e nos testes, mas
+  o navegador real mostrava sempre o tema claro mesmo com a classe
+  `dark` presente — só apareceu ao inspecionar `getComputedStyle` de
+  verdade no Chromium, não é algo que teste de tipo/lint pega.
+  - Script inline (`dangerouslySetInnerHTML`) aplica a preferência
+    salva **antes da primeira pintura** (mesma técnica de bibliotecas
+    como `next-themes`) — servidor sempre renderiza com `dark` presente
+    (padrão do produto), o script só remove a classe se
+    `localStorage` disser `"light"`.
+  - `toggleTheme()` também grava no `localStorage` (com fallback
+    silencioso se indisponível — modo privado, cota etc. — a troca em
+    si não quebra, só não persiste).
+- **`components/ronda/theme-toggle.tsx`** (novo): botão de alternância,
+  texto "☾ Escuro"/"☀ Claro" conforme o tema atual, no cabeçalho do
+  wizard (`ronda-wizard.tsx`, canto superior direito, ao lado do
+  título) — visível em toda etapa do wizard, não só na inicial.
+- **`app/ronda/layout.tsx`**: `<div>` estático trocado por
+  `<RondaThemeProvider>`; `viewport.themeColor` atualizado de
+  `"#0a0c10"` (cor antiga, não usada em nenhum outro lugar) para
+  `"#1E2761"` (Midnight, a cor de fundo escuro real agora).
+- **Inventário completo de cor hardcoded assumindo fundo escuro**,
+  convertido com par claro/escuro em `app/ronda/`, `finding-card.tsx`,
+  `queue-status-bar.tsx`, `ronda-wizard.tsx`: `border-white/NN` →
+  `border-black/NN dark:border-white/NN`, `bg-white/[0.03]` →
+  `bg-black/[0.03] dark:bg-white/[0.03]`, `bg-black/30` (barra de fila)
+  → `bg-black/5 dark:bg-black/30`, `text-slate-100/200/300/400` →
+  contraparte mais escura (`slate-900/800/700/600`) `dark:` a versão
+  original. `[color-scheme:dark]` nos inputs virou
+  `[color-scheme:light] dark:[color-scheme:dark]` (afeta o popup nativo
+  de `<select>`/`<input type=date>`/checkbox — sem isso, o popup nativo
+  ficaria sempre escuro mesmo em tema claro, herdando o
+  `:root { color-scheme: dark }` global do `app/globals.css`, que não
+  foi tocado, é intencionalmente global pro resto do app).
+- **Não alterado, por decisão explícita da instrução**: as cores de
+  estado/classificação em si (seletor de estado
+  vermelho/âmbar/esmeralda em `finding-card.tsx`, badge "pendente",
+  caixa de alerta "Ainda falta avaliar" na Etapa 3, indicadores de fila
+  em `queue-status-bar.tsx`, os botões `bg-cyan-500`/`bg-emerald-500
+  text-black` de avançar/concluir) — hex idêntico nos dois modos, só
+  verifiquei contraste (achado abaixo, relevante).
+
+### Achado de contraste — grave, precisa de decisão do Architect (leia antes de aprovar)
+
+Medi contraste real (WCAG, `getComputedStyle` no Chromium real, cor de
+fundo composta com blend do alfa sobre a cor de página — não só a cor
+nominal do token):
+
+| Elemento (modo claro) | Contraste medido |
+|---|---|
+| Chip "Risco identificado" selecionado (`bg-red-400/15 text-red-300`) | **1.53:1** |
+| Badge "pendente" (`bg-amber-400/15 text-amber-300`) | **1.24:1** |
+| Chip "Considerado inexistente" selecionado (`bg-emerald-400/15 text-emerald-300`) | **1.28:1** |
+| Chip "Não avaliado" selecionado — padrão de todo card (`bg-amber-400/15 text-amber-300`) | **1.24:1** |
+| Caixa de alerta "Ainda falta avaliar" na Etapa 3 (`text-amber-300` sobre `bg-amber-400/10`) | **1.33:1** |
+
+Todos muito abaixo até do mínimo de UI/texto grande (3:1), quanto mais
+do texto normal (4.5:1) — na prática, quase ilegível a olho nu em tema
+claro (confirmei visualmente nas capturas de tela, não só no número —
+ver `/tmp/ronda-claro-etapa-B.png` e `/tmp/ronda-claro-etapa-C.png`
+desta sessão, não fazem parte do PR). Causa raiz: esse padrão de cor
+(`text-COR-300` sobre `bg-COR-400/15`) foi desenhado assumindo página
+de fundo escuro — funciona bem no modo escuro (não mudou, não medi
+regressão ali), mas quebra especificamente no modo claro, porque o
+texto "claro sobre translúcido" perde quase todo contraste quando a
+translucidez passa a compor com uma página quase branca em vez de quase
+preta.
+
+**Não corrigi isso.** A instrução foi explícita: "Cores de
+estado/classificação ... continuam as mesmas nos dois modos — não
+inverter essas". Segui a instrução à risca mesmo identificando que o
+resultado prático é ruim — não tomei a decisão de trocar por conta
+própria porque a instrução vedou exatamente esse tipo de mudança.
+Registro aqui com prioridade alta porque a orientação também pedia
+"confirme que o contraste continua adequado" — confirmei que **não
+está***, e a diferença é grande o bastante (abaixo de 1.6:1 em todos os
+casos) que não é uma questão de gosto, é uma questão de legibilidade
+real. Opções pro Architect decidir: (a) aceitar como está (cor exata
+importa mais que WCAG aqui, mesma lógica do achado "Atenção" da Tarefa
+2); (b) usar uma variante mais escura desses tokens (`-600`/`-700`)
+só no modo claro, mantendo os mesmos hex no modo escuro; (c) outra
+saída. Não fiz nenhuma delas sozinho.
+
+### Verificado nesta sessão
+
+- `pnpm run typecheck` — limpo.
+- `pnpm run test:constitution` — `Constitution checks passed (63 files
+  scanned)`.
+- `pnpm test` — **30/30** (suíte existente; tema é CSS/DOM, sem lógica
+  nova testável em `lib/` além do módulo `theme.ts`, que é só
+  tipo+constante, sem função pra testar).
+- **Playwright, contra o app real** (`tsx server.ts` local, porta 3000
+  neste ambiente):
+  - Confirmado `getComputedStyle` do elemento raiz: fundo padrão
+    `rgb(30, 39, 97)` (= `#1E2761`) com a classe `dark` presente, sem
+    clicar em nada — escuro é o padrão de fato, não só de intenção.
+  - Cliquei no botão de alternância: fundo mudou pra
+    `rgb(244, 246, 251)` (= `#F4F6FB`), classe `dark` removida.
+  - **Persistência confirmada de verdade**: depois de `page.reload()`
+    (recarregamento completo, não navegação client-side), a classe
+    `dark` continuou ausente — a preferência "claro" sobreviveu ao
+    reload via `localStorage` + o script de aplicação antes da pintura.
+  - **Screenshots de tela inteira das 3 etapas do wizard (A, B com um
+    achado expandido mostrando todos os campos, C com a caixa de
+    alerta), nos dois modos** — 6 capturas no total, mais 1 pós-reload.
+    Confirmei visualmente que nada estrutural (bordas, fundos de card,
+    texto de rótulo, inputs, botões) fica ilegível ou invisível em
+    nenhum dos dois modos — a única coisa realmente ilegível é o achado
+    de contraste documentado acima, que é sobre cor de estado
+    preservada de propósito, não sobre a estrutura geral do tema.
+  - Popup nativo de `<select>`/`<input type=date>` em modo claro **não
+    foi re-verificado visualmente** — mesma limitação já documentada na
+    entrada de 2026-08-06 deste arquivo (Chromium headless não renderiza
+    o popup nativo desses widgets com o tema real do SO/tela). Apliquei
+    `[color-scheme:light] dark:[color-scheme:dark]` pela mesma lógica
+    documentada ali (é a recomendação padrão, `color-scheme` no próprio
+    elemento, não só herdado), mas não tenho como provar visualmente
+    neste ambiente — mesma ressalva de antes.
+  - Scripts de verificação (2, incluindo um que recalcula contraste com
+    blend de alfa real) escritos só para esta sessão, removidos antes
+    do commit — não fazem parte do diff.
+
+### O que NÃO foi feito
+
+- Nenhuma correção do achado de contraste acima — decisão fica com o
+  Architect, por instrução explícita de não inverter cores de estado.
+- Forge não tocado — `darkMode: "class"` é global no `tailwind.config.ts`
+  (não tem como escopar por rota), mas nenhum arquivo fora de `/ronda`
+  usa `dark:`, então isso não muda nada visualmente fora da rota.
+  Confirmado via busca — não há outro uso de `dark:` no repositório
+  além do que esta entrega adicionou.
+- Nenhuma automação de tema por `prefers-color-scheme` — só o botão
+  manual, como pedido.
 - Merge, "Ready for review" — branch segue draft, aguardando revisão.
