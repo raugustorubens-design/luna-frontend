@@ -68,7 +68,11 @@ export function FindingCard({ finding, onChange }: { finding: RondaFinding; onCh
     <div className="rounded-lg border border-black/10 bg-black/[0.03] p-3 dark:border-white/10 dark:bg-white/[0.03]">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{RISK_CATEGORY_LABELS[finding.categoria]}</h3>
-        {finding.estado === "nao_avaliado" && <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-[10px] text-amber-300">pendente</span>}
+        {finding.estado === "nao_avaliado" && (
+          <span className="rounded-full bg-amber-400/40 px-2 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
+            pendente
+          </span>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={`Estado — ${RISK_CATEGORY_LABELS[finding.categoria]}`}>
@@ -82,10 +86,10 @@ export function FindingCard({ finding, onChange }: { finding: RondaFinding; onCh
             className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
               finding.estado === estado
                 ? estado === "identificado"
-                  ? "border-red-400 bg-red-400/15 text-red-300"
+                  ? "border-red-400 bg-red-400/40 text-red-900 dark:bg-red-400/15 dark:text-red-300"
                   : estado === "inexistente"
-                    ? "border-emerald-400 bg-emerald-400/15 text-emerald-300"
-                    : "border-amber-400 bg-amber-400/15 text-amber-300"
+                    ? "border-emerald-400 bg-emerald-400/40 text-emerald-900 dark:bg-emerald-400/15 dark:text-emerald-300"
+                    : "border-amber-400 bg-amber-400/40 text-amber-900 dark:bg-amber-400/15 dark:text-amber-300"
                 : "border-black/15 text-slate-600 hover:border-black/30 dark:border-white/15 dark:text-slate-400 dark:hover:border-white/30"
             }`}
           >

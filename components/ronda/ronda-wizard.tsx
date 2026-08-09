@@ -152,7 +152,7 @@ export function RondaWizard() {
             </label>
 
             {!canConclude && (
-              <div className="rounded border border-amber-400/40 bg-amber-400/10 p-3 text-xs text-amber-300">
+              <div className="rounded border border-amber-400/40 bg-amber-400/40 p-3 text-xs text-amber-900 dark:bg-amber-400/10 dark:text-amber-300">
                 <p className="mb-1 font-medium">Ainda falta avaliar {pendingCategories.length} categoria(s) antes de concluir:</p>
                 <ul className="list-inside list-disc">
                   {pendingCategories.map((f) => (

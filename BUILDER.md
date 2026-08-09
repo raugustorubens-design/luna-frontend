@@ -519,20 +519,36 @@ texto "claro sobre translúcido" perde quase todo contraste quando a
 translucidez passa a compor com uma página quase branca em vez de quase
 preta.
 
-**Não corrigi isso.** A instrução foi explícita: "Cores de
-estado/classificação ... continuam as mesmas nos dois modos — não
-inverter essas". Segui a instrução à risca mesmo identificando que o
-resultado prático é ruim — não tomei a decisão de trocar por conta
-própria porque a instrução vedou exatamente esse tipo de mudança.
-Registro aqui com prioridade alta porque a orientação também pedia
-"confirme que o contraste continua adequado" — confirmei que **não
-está***, e a diferença é grande o bastante (abaixo de 1.6:1 em todos os
-casos) que não é uma questão de gosto, é uma questão de legibilidade
-real. Opções pro Architect decidir: (a) aceitar como está (cor exata
-importa mais que WCAG aqui, mesma lógica do achado "Atenção" da Tarefa
-2); (b) usar uma variante mais escura desses tokens (`-600`/`-700`)
-só no modo claro, mantendo os mesmos hex no modo escuro; (c) outra
-saída. Não fiz nenhuma delas sozinho.
+**Corrigido (mesma sessão, instrução do Engineer):** mesmo princípio já
+usado nas cores de classificação (Tarefa 2) — manter o matiz
+(vermelho/âmbar/esmeralda), não inverter o significado da cor, mas
+resolver a legibilidade. Aplicado nos 5 pontos da tabela acima:
+opacidade do fundo subiu de `/15` (ou `/10`, na caixa de alerta) para
+`/40` **só no modo claro** (`bg-COR-400/40`, sem prefixo `dark:`), com
+o `dark:` preservando o valor original (`/15`/`/10`) exatamente como
+estava — modo escuro não mudou. Texto trocado de `text-COR-300` (claro,
+desenhado pra fundo escuro) para `text-COR-900` (`-900` da mesma
+família de cor, não uma cor fora da paleta) só no modo claro, mesma
+lógica de `dark:` preservando `-300` no modo escuro.
+
+Recalculado (mesma metodologia — `getComputedStyle` no Chromium real,
+blend de alfa real sobre a cor de fundo efetiva, não a cor nominal):
+
+| Elemento (modo claro, depois da correção) | Contraste | Critério aplicado |
+|---|---|---|
+| Chip "Risco identificado" selecionado | **6.35:1** | texto normal (≥4.5:1) — rótulo curto mas não é texto "grande" no sentido do WCAG (não é ≥18.66px/bold ou ≥24px), medi pelo critério mais rígido |
+| Badge "pendente" | **6.98:1** | texto normal (≥4.5:1), mesmo critério — `text-[10px]`, ainda mais motivo pra não relaxar pra 3:1 |
+| Chip "Considerado inexistente" selecionado | **7.01:1** | texto normal (≥4.5:1) |
+| Chip "Não avaliado" — padrão de todo card | **6.98:1** | texto normal (≥4.5:1) |
+| Caixa de alerta "Ainda falta avaliar" (Etapa 3) | **6.98:1** | texto normal (≥4.5:1) — texto do parágrafo, corpo de frase, não título |
+
+Todos os 5 passam confortavelmente o critério mais rígido (texto
+normal, 4.5:1) — não precisei recorrer ao critério mais frouxo de texto
+grande (3:1) em nenhum caso, então não há ambiguidade de qual critério
+se aplica. Modo escuro **não mudou**: reconferido com o mesmo script,
+valores idênticos aos já registrados antes da correção (`7.15:1`,
+`5.98:1`, `6.81:1`, `7.96:1`) — confirmação de que o `dark:` preservou
+o comportamento original, não é suposição.
 
 ### Verificado nesta sessão
 
@@ -572,11 +588,20 @@ saída. Não fiz nenhuma delas sozinho.
   - Scripts de verificação (2, incluindo um que recalcula contraste com
     blend de alfa real) escritos só para esta sessão, removidos antes
     do commit — não fazem parte do diff.
+  - **Correção do achado de contraste (mesma sessão, ver acima)**:
+    `pnpm run typecheck` limpo, `pnpm run test:constitution` (63
+    arquivos) e `pnpm test` (30/30) repetidos depois da mudança — sem
+    regressão. Screenshots antes/depois de cada elemento corrigido, nos
+    dois modos: `/tmp/fix2-escuro-*.png` (confirmam que nada mudou
+    visualmente no modo escuro) e `/tmp/fix2-claro-*.png` (confirmam a
+    correção — badges/chips/caixa de alerta legíveis de verdade agora,
+    não só "passa no número"). Não fazem parte do PR.
 
 ### O que NÃO foi feito
 
-- Nenhuma correção do achado de contraste acima — decisão fica com o
-  Architect, por instrução explícita de não inverter cores de estado.
+- ~~Nenhuma correção do achado de contraste acima~~ — **corrigido nesta
+  sessão**, por instrução explícita do Engineer (ver "Achado de
+  contraste" acima) — não é mais uma pendência.
 - Forge não tocado — `darkMode: "class"` é global no `tailwind.config.ts`
   (não tem como escopar por rota), mas nenhum arquivo fora de `/ronda`
   usa `dark:`, então isso não muda nada visualmente fora da rota.
