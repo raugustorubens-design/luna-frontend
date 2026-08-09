@@ -40,13 +40,17 @@ function ProjectSelector() {
 // fora da árvore renderizada no servidor, assim como o MonacoEditor em editor.tsx.
 const Terminal = dynamic(() => import("@/components/forge/terminal").then((mod) => mod.Terminal), { ssr: false });
 
-export function ForgeLayout() {
+interface ForgeLayoutProps {
+  initialTab?: "workspace" | "convergia";
+}
+
+export function ForgeLayout({ initialTab = "workspace" }: ForgeLayoutProps) {
   const [activeFile, setActiveFile] = useState<string | null>(null);
 
   return (
     <ProjectProvider>
       <div className="flex h-screen flex-col">
-        <Tabs defaultValue="workspace" className="flex flex-1 flex-col overflow-hidden">
+        <Tabs defaultValue={initialTab} className="flex flex-1 flex-col overflow-hidden">
           <header className="flex items-center gap-2 border-b px-3 py-1.5">
             <span className="forge-brand-glow h-2 w-2 rounded-full bg-primary" />
             <span className="text-sm font-semibold forge-accent-text">LUNA Forge</span>
