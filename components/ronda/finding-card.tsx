@@ -21,11 +21,18 @@ import { compressPhoto } from "@/lib/ronda/photo";
  * aqui no wizard, decisão do Architect para manter as duas telas
  * consistentes. Preenchimento sólido (classe estática, não um template
  * dinâmico, para o Tailwind JIT conseguir escanear a classe no build) +
- * texto branco por cima.
+ * texto claro por cima — exceto "Atenção" (ver abaixo).
+ *
+ * "Atenção" (`#E8A33D`) usa texto escuro (`#1E2761`, Midnight, já usado em
+ * outro lugar do projeto), não branco: medido nesta sessão, texto branco
+ * sobre esse fundo dá só 2.16:1 de contraste (abaixo de AA, 4.5:1) — o
+ * fundo em si já é claro demais pra qualquer texto quase-branco passar.
+ * Fundo mantido exato (cor de marca, do protótipo), corrigido só o texto.
+ * Positivo/Não Conformidade continuam com texto branco — já passam AA.
  */
 const CLASSIFICATION_FILL_CLASS: Record<FindingClassification, string> = {
   positivo: "border-transparent bg-[#2E7D32] text-white",
-  atencao: "border-transparent bg-[#E8A33D] text-white",
+  atencao: "border-transparent bg-[#E8A33D] text-[#1E2761]",
   nao_conformidade: "border-transparent bg-[#C62828] text-white",
 };
 

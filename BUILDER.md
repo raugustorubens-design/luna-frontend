@@ -664,6 +664,17 @@ formal de acessibilidade. Recomendo ao Architect decidir entre manter
 como está (cor exata do protótipo, prioridade sobre WCAG) ou usar texto
 escuro só para "Atenção" — não tomei essa decisão sozinho.
 
+**Corrigido (mesma sessão, instrução do Engineer):** fundo `#E8A33D`
+mantido exato (cor de marca), texto trocado de `#FFFFFF` para `#1E2761`
+(Midnight, já usado em outro lugar do projeto) só em "Atenção".
+Recalculado (mesma metodologia, `getComputedStyle` no Chromium real):
+luminância de `#1E2761` ≈ 0.0259, contraste contra `#E8A33D`
+(luminância ≈ 0.437) = **6.41:1 — passa AA texto normal (≥4.5:1)**, não
+foi preciso cair pra preto puro. Positivo e Não Conformidade não
+mudaram (`#FFFFFF`, já passavam AA). Screenshot de confirmação em
+`/tmp/fix1-depois-aten--o.png` (não faz parte do PR) — texto legível
+sem ambiguidade, não só "passa no número".
+
 ### Verificado nesta sessão
 
 - `pnpm run typecheck` — limpo.
@@ -681,12 +692,20 @@ escuro só para "Atenção" — não tomei essa decisão sozinho.
   screenshot da tela inteira — ver achado de contraste acima. Script de
   verificação escrito só para esta sessão, removido antes do commit —
   não faz parte do diff.
+- **Correção do achado de contraste (mesma sessão, ver acima)**:
+  `pnpm run typecheck` limpo, `pnpm run test:constitution` (60 arquivos)
+  e `pnpm test` (30/30) repetidos depois da mudança de cor de texto —
+  sem regressão. Repeti a verificação via Playwright das 3 classificações
+  (mesmo script/metodologia), confirmando `text=rgb(30, 39, 97)` no botão
+  "Atenção" selecionado e contraste `6.41:1`.
 
 ### O que NÃO foi feito
 
 - Seletor de estado (não avaliado/identificado/inexistente) — cores e
   estilo continuam exatamente como estavam.
 - `FINDING_CLASSIFICATIONS` — lista de opções não mudou.
-- Nenhuma correção de contraste aplicada por conta própria em
-  "Atenção" — decisão fica com o Architect, ver achado acima.
+- ~~Nenhuma correção de contraste aplicada por conta própria em
+  "Atenção"~~ — **corrigido nesta sessão**, por instrução explícita do
+  Engineer (ver "Achado durante a verificação" acima) — não é mais uma
+  pendência.
 - Merge, "Ready for review" — branch segue draft, aguardando revisão.
