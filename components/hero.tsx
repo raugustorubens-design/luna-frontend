@@ -1,7 +1,11 @@
 "use client";
+import { useState } from "react";
 import { motion } from "framer-motion";
+import { CognitiveSessionModal } from "@/components/cognitive-session-modal";
 
 export function Hero() {
+  const [sessionModalOpen, setSessionModalOpen] = useState(false);
+
   return (
     <section className="relative scanline mx-auto flex min-h-[75vh] w-full max-w-7xl items-center px-6 py-20">
       <div className="max-w-3xl">
@@ -25,10 +29,17 @@ export function Hero() {
           Uma entidade cognitiva persistente com memória viva, auto-modelagem operacional e observabilidade neural contínua.
         </motion.p>
         <div className="mt-8 flex gap-4">
-          <button className="rounded-xl bg-luna-violet px-5 py-3 text-sm font-medium shadow-aura transition hover:-translate-y-0.5">Iniciar Sessão Cognitiva</button>
+          <button
+            onClick={() => setSessionModalOpen(true)}
+            className="rounded-xl bg-luna-violet px-5 py-3 text-sm font-medium shadow-aura transition hover:-translate-y-0.5"
+          >
+            Iniciar Sessão Cognitiva
+          </button>
           <button className="rounded-xl border border-luna-cyan/60 bg-luna-secondary/60 px-5 py-3 text-sm text-luna-cyanHi transition hover:shadow-cyan">Explorar Pipeline</button>
         </div>
       </div>
+
+      <CognitiveSessionModal open={sessionModalOpen} onClose={() => setSessionModalOpen(false)} />
     </section>
   );
 }

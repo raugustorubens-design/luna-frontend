@@ -12,6 +12,11 @@ export const metadata = {
 // comportamento correto para esta rota de qualquer forma.
 export const dynamic = "force-dynamic";
 
-export default function ForgePage() {
-  return <ForgeLayout />;
+export default async function ForgePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
+  const { tab } = await searchParams;
+  return <ForgeLayout initialTab={tab === "convergia" ? "convergia" : "workspace"} />;
 }

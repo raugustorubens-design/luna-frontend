@@ -801,3 +801,58 @@ tinham sido vistas juntas.
   escopo do achado do Codex (que apontou especificamente o seletor de
   Classificação, introduzido por este PR).
 - Merge, "Ready for review" — branch segue draft, aguardando revisão.
+
+## 2026-08-09 — Modal "Iniciar Sessão Cognitiva" na Home, com atalho pro Forge/Convergia
+
+### Causa
+
+O botão "Iniciar Sessão Cognitiva" no Hero (`components/hero.tsx`) era
+um `<button>` sem `onClick` — puramente decorativo, nunca foi ligado a
+nada. `/forge` e `/ronda` já existem e funcionam, mas nenhum link
+visível na home (`app/page.tsx`) apontava pra eles.
+
+### O que foi entregue
+
+- **`components/cognitive-session-modal.tsx`** (novo): modal sobreposto
+  à página atual (não navega pra rota nova ao abrir) com um botão "Luna
+  Convergia" que leva pro Forge. Fechável por X, clique fora do painel
+  (`onMouseDown` comparando `event.target === event.currentTarget`,
+  então cliques dentro do painel não fecham por bubbling) e tecla Esc
+  (`keydown` no `document`, só enquanto `open`). `role="dialog"` +
+  `aria-modal` + `aria-labelledby` pro título. Só `/forge` — `/ronda`
+  fica fora deste modal, não foi pedido desta vez.
+- **`components/hero.tsx`**: botão "Iniciar Sessão Cognitiva" ganhou
+  `onClick` que abre o modal via `useState`. "Explorar Pipeline" não
+  foi tocado — segue decorativo, fora de escopo.
+- **Aba Convergia via URL** (`?tab=convergia`), não só o Workspace
+  padrão: investiguei `components/forge/forge-layout.tsx` antes de
+  assumir que dava — o `Tabs` do Radix usava `defaultValue="workspace"`
+  fixo. Troquei por uma prop `initialTab` (`"workspace" | "convergia"`,
+  default `"workspace"` — não muda o comportamento de quem já usa
+  `<ForgeLayout />` sem prop). `app/forge/page.tsx` virou `async` e lê
+  `searchParams` (Next 15 — é uma `Promise`) pra decidir a prop. O
+  botão "Luna Convergia" navega com `router.push("/forge?tab=convergia")`.
+
+### Verificado nesta sessão
+
+- `npm run typecheck` — limpo.
+- `npm run test:constitution` — `Constitution checks passed (64 files
+  scanned)`.
+- `npm test` — **30/30** (suíte existente, nenhum teste novo — não há
+  suíte de componentes React neste repo).
+- **Playwright, contra o app real** (`tsx server.ts` local, porta 3000):
+  clicou em "Iniciar Sessão Cognitiva", confirmou o modal aberto com
+  "Luna Convergia" visível; testou as 3 formas de fechar (Esc, clique
+  fora, X) reabrindo o modal entre cada uma; clicou em "Luna Convergia"
+  e confirmou `page.url()` real em `/forge?tab=convergia` (não só
+  mudança de aparência) e a aba Convergia com `data-state="active"` no
+  Radix Tabs. Script de verificação escrito só para esta sessão,
+  removido antes do commit — não faz parte do diff.
+
+### O que NÃO foi feito
+
+- Botão "Explorar Pipeline" — segue sem função, fora de escopo desta
+  instrução (pendente separado).
+- Acesso a `/ronda` no modal — só Convergia foi pedido desta vez.
+- Nenhum redesign do resto da home.
+- Merge, "Ready for review" — branch segue draft, aguardando revisão.
