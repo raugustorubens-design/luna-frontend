@@ -98,6 +98,23 @@ export interface RondaSubmission {
   encerramento: RondaClosing;
 }
 
+/**
+ * Espelha `luna-core/src/convergia/ronda/contracts.ts` (`RondaPatch`) —
+ * corpo de `PATCH /convergia/ronda/:id` (extensão da Fase 1, CONV-013, não
+ * fase nova). `achados`, quando presente, é a lista de achados a substituir
+ * na ronda existente, um por `categoria` (cada ronda cobre as 7 categorias
+ * exatamente uma vez — `categoria` é o "id" natural do achado, não há
+ * índice de array estável). "Adicionar achado" = enviar a categoria com
+ * `estado: "identificado"`; "remover achado" = reenviar a mesma categoria
+ * com `estado: "nao_avaliado"`/`"inexistente"` (mesmo efeito de
+ * `FindingCard.setEstado` no wizard original). `encerramento` faz merge
+ * raso sobre o que já está salvo.
+ */
+export interface RondaPatch {
+  achados?: RondaFinding[];
+  encerramento?: Partial<RondaClosing>;
+}
+
 /** Uma entrada nova (rascunho em andamento) — Bloco A ainda incompleto é permitido enquanto o wizard está sendo preenchido; só a submissão final exige tudo. */
 export function emptyMetadata(): RondaMetadata {
   return { titulo: "", data: new Date().toISOString().slice(0, 10), local: "", responsavel: "", turno: "" };

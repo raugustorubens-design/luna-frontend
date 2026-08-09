@@ -935,3 +935,105 @@ Guardian real de produção (`strong-celebration`).
   final — não faz parte do diff.
 - Merge, "Ready for review" — branch segue draft, aguardando revisão.
 
+## 2026-08-09 — Edição de ronda já enviada (extensão da Fase 1/CONV-013): histórico + patch
+
+Backend companheiro: `luna-core` PR desta mesma sessão,
+`PATCH /convergia/ronda/:id` (ver `luna-core` `BUILDER.md`, mesma data).
+
+- **`lib/ronda/types.ts`** — `RondaPatch` (espelha
+  `luna-core/src/convergia/ronda/contracts.ts`, mesmo padrão de cópia
+  deliberada já usado pelo resto deste arquivo).
+- **`lib/ronda/api-client.ts`** — `listRondas`, `getRonda` (novo tipo
+  `RondaDetail = RondaSubmission & {createdAt}`) e `patchRonda`, mesmo
+  padrão de erro (`RondaSubmitError`) que `submitRonda` já usa. Reaproveita
+  `RondaSubmitResult` já existente em vez de criar um segundo tipo de
+  resumo.
+- **`app/ronda/historico/page.tsx`** + **`components/ronda/ronda-list.tsx`**
+  — lista mínima (`GET /convergia/ronda`): data, local, quantidade de
+  achados, nada além disso. Sem dashboard/filtro/gráfico — isso é o
+  painel de gestão completo, decisão maior ainda pendente (P3 do
+  documento de extensão do ADR-021), fora de escopo aqui por pedido
+  explícito.
+- **`app/ronda/historico/[id]/page.tsx`** + **`components/ronda/ronda-editor.tsx`**
+  — edição: reaproveita `FindingCard` (mesmo componente de achado do
+  wizard original, nenhuma UI nova de achado) para as 7 categorias, mais
+  um campo de observação geral. "Adicionar achado" = marcar uma categoria
+  ainda não identificada; "remover achado" = reverter uma categoria
+  identificada de volta a não-identificada — o modelo de dado sempre tem
+  as 7 categorias presentes (nunca um array de tamanho variável), então
+  não existe "índice" de achado a apagar, só o `estado` de cada categoria
+  a mudar (mesmo mecanismo que `FindingCard.setEstado` já usa no wizard
+  original). Salvar chama `patchRonda` com a lista completa de achados +
+  a observação geral — o backend já mescla por `categoria`, então reenviar
+  tudo é seguro e mais simples que calcular um diff no cliente. Next.js 15
+  — `params` é `Promise<{id: string}>`, `page.tsx` é `async`.
+- Link de entrada: "Ver rondas anteriores" na Etapa A do wizard
+  (`ronda-wizard.tsx`), abaixo do campo Turno — lugar mais natural
+  encontrado (fim do formulário inicial, antes de avançar), não elaborado
+  além disso, conforme pedido.
+- **Fora de escopo, deliberadamente**: exclusão de ronda inteira (decisão
+  destrutiva separada, não pedida aqui) e edição de `metadata`
+  (título/data/local/responsável/turno — só achados e observação geral).
+
+### Verificado nesta sessão
+
+- `npm run typecheck` — limpo.
+- `npm run test` — **30/30** (suíte existente, nenhum teste novo —
+  `lib/ronda/api-client.ts` já não tinha teste próprio antes desta
+  sessão; `submitRonda` também não tem, mesmo padrão mantido).
+- `npm run test:constitution` — `Constitution checks passed (68 files
+  scanned)`.
+- `npm run build` (`next build`) — build de produção completo sem erro;
+  as duas rotas novas aparecem no relatório (`/ronda/historico` estática,
+  `/ronda/historico/[id]` dinâmica).
+
+### Verificado ponta a ponta, contra produção real (Guardian) e via UI real (Playwright)
+
+`luna-frontend` local (`tsx server.ts`, porta 3000) contra um `luna-core`
+local (porta 8080) rodando a branch companheira desta entrega (`PATCH
+/convergia/ronda/:id`), que por sua vez fala com o Guardian real de
+produção (`strong-celebration`) — mesma cadeia que as entregas anteriores
+de Convergia usaram.
+
+Criada uma ronda sintética real via `curl` direto no backend local (7
+categorias, 1 achado identificado, título/local claramente marcados
+"TESTE E2E ... apagar"), editada uma vez via `curl` (`PATCH` — achado
+adicionado, achado removido, observação editada) para confirmar o backend
+isoladamente (ver `luna-core` `BUILDER.md` para esse lado), depois
+**editada de novo pela UI real**: `/ronda` → "Ver rondas anteriores" →
+lista mostra a ronda de teste com contagem/data/local corretos → abre o
+editor → estado carregado bate com o que o `curl` tinha salvo (observação
+geral e achados corretos, inclusive o achado identificado por engano
+anterior mostrando "Risco identificado" selecionado) → editou a
+observação geral de novo e adicionou um segundo achado (Espaço Confinado,
+preenchendo departamento/classificação/gravidade/descrição pelos campos
+reais do formulário) → "Salvar alterações" → mensagem "Alterações
+salvas." → confirmado via `GET` direto no backend que as duas mudanças
+feitas pela UI persistiram exatamente como preenchidas. Screenshots de
+cada tela (lista, editor carregado, editor preenchido, confirmação de
+salvo).
+
+**Limpeza:** os registros de teste desta sessão (o criado via `curl` para
+este PR, e o criado pelo wizard durante o teste do PR de renomeação/botão)
+foram removidos do Guardian real de produção ao final — `search()` na
+coleção `convergia_rondas` confirmado vazio depois. Nenhum dado sintético
+ficou em produção. Servidores locais (`luna-core`/`luna-frontend`)
+parados ao final.
+
+### O que NÃO foi feito
+
+- Painel de gestão completo (dashboard, filtro, gráfico) — decisão maior
+  ainda pendente (P3 do documento de extensão do ADR-021), fora de
+  escopo por pedido explícito.
+- Exclusão de ronda inteira pela UI — decisão destrutiva separada, não
+  pedida.
+- Nenhum teste automatizado novo commitado no repositório (nem unitário
+  de componente React — não existe suíte desse tipo aqui hoje — nem
+  Playwright): os scripts de Playwright usados nesta sessão viveram fora
+  do repositório (diretório de scratch), removidos ao final da sessão —
+  não fazem parte do diff.
+- `GENESIS/ROADMAP.md` não atualizado — vive em `Luna-context.md`, fora
+  do escopo desta rodada (só `luna-frontend`/`luna-core`). ID confirmado
+  para referência: **CONV-013** (ADR-021 Fase 1) — esta entrega é
+  extensão dele, não item novo.
+- Merge, "Ready for review" — branch segue draft, aguardando revisão.
