@@ -1,6 +1,12 @@
 import type { Config } from "tailwindcss";
 
 export default {
+  // "class" (não a media query prefers-color-scheme): a alternância do
+  // wizard de ronda (/ronda) é manual, via botão — não automática pela
+  // preferência do sistema. Nenhum outro lugar do repositório usava
+  // dark: antes disto (Forge/User Mode usam variáveis CSS via :root, não
+  // esse mecanismo), então ligar isto aqui não muda nada fora de /ronda.
+  darkMode: "class",
   content: ["./app/**/*.{js,ts,jsx,tsx}", "./components/**/*.{js,ts,jsx,tsx}"],
   theme: {
     extend: {
