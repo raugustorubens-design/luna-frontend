@@ -331,3 +331,102 @@ editor continuaria mostrando/calculando com a régua errada.
   `slideSize`, e este editor sempre cai no fallback de 720pt/16:9 (o que
   não é um bug deste PR — é o mesmo comportamento de hoje, preservado de
   propósito).
+
+## 2026-08-09 — Colar imagem (Ctrl+V) no Template Visual do Convergia
+
+**Contexto:** instrução explícita, escopo restrito a
+`VisualTemplateUploadStep` (`components/forge/convergia-panel.tsx`) —
+não mexer no campo de foto do wizard de ronda (`finding-card.tsx`), que
+é fluxo diferente e ficou de fora de propósito.
+
+### O que foi entregue
+
+- `handlePaste` no `onPaste` do container do formulário (não no
+  documento inteiro) — só age quando o foco está dentro dessa área.
+  Percorre `event.clipboardData.items`, procura o primeiro item com
+  `type` começando com `image/`, extrai via `item.getAsFile()`.
+- O arquivo colado é **renomeado** (`new File([blob], "Imagem
+  colada.png"` ou `.jpg` conforme o `type`) e escrito diretamente no
+  `<input type="file">` existente via `DataTransfer` — não um estado
+  paralelo, não um segundo caminho de upload. `handleUpload()` (que já
+  existia) continua lendo `fileInputRef.current.files[0]` exatamente
+  como antes; colar e clicar em "Escolher arquivo" alimentam o mesmo
+  arquivo do mesmo input.
+- Feedback visual: parágrafo novo (`{pastedFileName} (colada da área de
+  transferência)`) no mesmo lugar/estilo onde o feedback de arquivo já
+  aparece em `CatalogAndUploadStep` (mesmo padrão do componente
+  irmão) — limpo quando um novo arquivo é escolhido por clique
+  (`onChange` no input só zera esse estado, não muda o comportamento do
+  input em si) ou quando o upload é concluído com sucesso.
+- Colar texto comum (sem imagem) dentro da mesma área: nenhum item bate
+  `image/`, `event.preventDefault()` nunca é chamado, nada acontece —
+  verificado, não é suposição (ver abaixo).
+- Nenhuma biblioteca nova — só Clipboard API nativa do navegador
+  (`ClipboardEvent`, `DataTransfer`), já disponível no browser.
+- Nenhuma mudança no botão/input de arquivo existente além do `onChange`
+  que zera o feedback de "colada" — clique continua funcionando
+  exatamente como antes.
+- `components/ronda/finding-card.tsx` não tocado — fora de escopo,
+  como instruído.
+
+### Verificado nesta sessão
+
+- `pnpm run typecheck` — limpo.
+- `pnpm run test:constitution` — `Constitution checks passed (60 files
+  scanned)`.
+- `pnpm test` — **30/30** (suíte existente; esta mudança é só de
+  componente/interação de UI, sem teste de unidade dedicado no
+  repositório para esse tipo de arquivo — mesma convenção já usada nos
+  fixes anteriores de `convergia-position-editor.tsx`, verificação real
+  foi via Playwright, abaixo).
+- **Playwright, contra o app real** (`tsx server.ts` local, porta 3000
+  neste ambiente — a porta 3100 citada em entradas anteriores não se
+  confirmou aqui, o server sobe na 3000 por padrão; `POST
+  /convergia/templates/visual` interceptado via `page.route()`, já que
+  não há `luna-core` real alcançável neste sandbox — mesmo padrão já
+  usado na entrada de 2026-08-07 do wizard de ronda):
+  - Naveguei até `/forge` → aba "Convergia" → aba "Template Visual",
+    preenchi o nome do template, e disparei um `ClipboardEvent("paste")`
+    sintético no container do formulário com uma imagem PNG real
+    (bytes decodificados de base64, não um mock vazio) via
+    `DataTransfer`.
+  - Confirmado via `page.evaluate` que o `<input type="file">` real
+    passou a ter `files[0]` com `name: "Imagem colada.png"`,
+    `type: "image/png"` — o mesmo elemento que o clique usaria, não um
+    estado paralelo.
+  - Confirmado o texto "Imagem colada.png (colada da área de
+    transferência)" visível na tela.
+  - Cliquei em "Enviar imagem" (o mesmo botão de sempre, sem lógica
+    nova) e confirmei que exatamente 1 requisição `POST
+    /convergia/templates/visual` foi capturada, com corpo `multipart`
+    não vazio (376 bytes), e que a tela mostrou "Template criado
+    (tmpl-test-123)…" — o mesmo fluxo de sucesso que o upload por
+    clique já produz.
+  - Segunda verificação: colei **texto comum** (`"algum texto qualquer
+    colado sem querer"`, sem imagem) na mesma área — confirmado que
+    `input.files.length` permaneceu `0`, nenhuma requisição de upload
+    foi disparada, e o texto de feedback "colada da área de
+    transferência" não apareceu. Não é suposição de "deve ser inofensivo
+    por não ter código pra isso" — foi de fato exercitado.
+  - Os dois scripts de verificação (`page.route` + `ClipboardEvent`
+    sintético) foram escritos só para esta sessão e removidos antes do
+    commit — não fazem parte do diff.
+
+### O que NÃO foi feito
+
+- Nenhuma mudança em `components/ronda/finding-card.tsx` ou em qualquer
+  outro campo de foto fora do Template Visual do Convergia — fora de
+  escopo, por instrução explícita.
+- Nenhuma troca do `<input type="file">` existente por componente
+  customizado — colar é aditivo, o clique continua idêntico.
+- Nenhuma biblioteca nova adicionada a `package.json`/`pnpm-lock.yaml`.
+- Teste automatizado de Playwright **não foi adicionado ao repositório**
+  — não existe suíte de Playwright configurada aqui (`pnpm test` roda só
+  `tsx --test` sobre `lib/forge/__tests__`/`lib/ronda/__tests__`, testes
+  de lógica pura, não há harness de Playwright versionado no projeto
+  para componente de UI). A verificação via Playwright desta sessão foi
+  manual/ad-hoc contra o app real, documentada acima em detalhe, mesma
+  convenção já usada nas duas entradas anteriores deste arquivo — não
+  criei infraestrutura de teste E2E nova sem instrução explícita para
+  isso.
+- Merge, "Ready for review" — branch segue draft, aguardando revisão.

@@ -153,6 +153,7 @@ function VisualTemplateUploadStep() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadedTemplateId, setUploadedTemplateId] = useState<string | null>(null);
+  const [pastedFileName, setPastedFileName] = useState<string | null>(null);
 
   async function handleUpload() {
     const file = fileInputRef.current?.files?.[0];
@@ -164,6 +165,7 @@ function VisualTemplateUploadStep() {
       const result = await uploadConvergiaVisualTemplate(name.trim(), file);
       setUploadedTemplateId(result.templateId);
       setName("");
+      setPastedFileName(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao enviar o template visual.");
@@ -172,12 +174,34 @@ function VisualTemplateUploadStep() {
     }
   }
 
+  // Colar (Ctrl+V) como alternativa ao clique em "Escolher arquivo" — só
+  // quando o foco está dentro deste formulário, não no documento inteiro.
+  // O arquivo colado é escrito no mesmo <input type="file"> que o clique já
+  // usa (via DataTransfer), então handleUpload() acima não muda em nada.
+  function handlePaste(event: React.ClipboardEvent<HTMLDivElement>) {
+    const items = event.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (!item.type.startsWith("image/")) continue;
+      const blob = item.getAsFile();
+      if (!blob) continue;
+      const extension = item.type === "image/jpeg" ? "jpg" : "png";
+      const pasted = new File([blob], `Imagem colada.${extension}`, { type: item.type });
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(pasted);
+      if (fileInputRef.current) fileInputRef.current.files = dataTransfer.files;
+      setPastedFileName(pasted.name);
+      event.preventDefault();
+      break;
+    }
+  }
+
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3" onPaste={handlePaste}>
       <div>
         <SectionLabel>Template visual — imagem de fundo (PNG/JPG)</SectionLabel>
         <p className="mb-2 text-xs text-muted-foreground">
-          Envie a imagem do certificado/documento real (ex. Manserv/SMX). Depois, use a aba Posicionamento para arrastar campos por cima dela.
+          Envie a imagem do certificado/documento real (ex. Manserv/SMX), ou cole (Ctrl+V) uma imagem copiada. Depois, use a aba Posicionamento para arrastar campos por cima dela.
         </p>
         <input
           value={name}
@@ -189,8 +213,10 @@ function VisualTemplateUploadStep() {
           ref={fileInputRef}
           type="file"
           accept="image/png,image/jpeg"
+          onChange={() => setPastedFileName(null)}
           className="text-xs file:mr-2 file:rounded file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs"
         />
+        {pastedFileName && <p className="mt-1 text-xs text-muted-foreground">{pastedFileName} (colada da área de transferência)</p>}
         <div className="mt-2 flex justify-end">
           <Button size="sm" onClick={handleUpload} disabled={uploading || !name.trim()}>
             {uploading ? "Enviando…" : "Enviar imagem"}
