@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, GitBranch } from "lucide-react";
+import { X, GitBranch, Footprints } from "lucide-react";
 
 interface CognitiveSessionModalProps {
   open: boolean;
@@ -69,6 +69,16 @@ export function CognitiveSessionModal({ open, onClose }: CognitiveSessionModalPr
                 <span>
                   <span className="block font-semibold">Luna Convergia</span>
                   <span className="block text-xs font-normal text-white/70">Abrir aba Convergia no Forge</span>
+                </span>
+              </button>
+              <button
+                onClick={() => router.push("/ronda")}
+                className="flex items-center gap-3 rounded-xl bg-luna-violet px-4 py-3 text-left text-sm font-medium shadow-aura transition hover:-translate-y-0.5"
+              >
+                <Footprints size={18} />
+                <span>
+                  <span className="block font-semibold">LUNA Safety Walk</span>
+                  <span className="block text-xs font-normal text-white/70">Registrar ronda de segurança (SSMA)</span>
                 </span>
               </button>
             </div>

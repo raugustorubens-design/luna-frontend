@@ -856,3 +856,82 @@ visível na home (`app/page.tsx`) apontava pra eles.
 - Acesso a `/ronda` no modal — só Convergia foi pedido desta vez.
 - Nenhum redesign do resto da home.
 - Merge, "Ready for review" — branch segue draft, aguardando revisão.
+
+## 2026-08-09 — Renomeação "Ronda" → "LUNA Safety Walk" + botão no modal da home
+
+Duas entregas relacionadas na mesma sessão: a renomeação (item 1) é
+pré-requisito de nome pro botão do modal (item 2). A terceira entrega da
+mesma sessão (edição de ronda já enviada) tem entrada própria, logo
+abaixo, e PR separado (depende deste, para reaproveitar o nome novo e o
+link de entrada).
+
+### 1. Renomeação "Ronda"/"Ronda Fotográfica" → "LUNA Safety Walk"
+
+Varredura completa de `/ronda` (não só o óbvio) via `grep -rn "Ronda" .`
+no repositório inteiro, revisando cada ocorrência antes de decidir tocar
+ou não:
+
+- **Trocado** (nome visível na interface): `h1` do wizard, os 4 estados
+  do subtítulo por etapa, placeholder do campo Título, as duas mensagens
+  da tela final ("salvo"/"registrado"), os dois botões
+  ("Concluir .../Nova ..."), `<title>` da aba do navegador e
+  `appleWebApp.title` (`app/ronda/layout.tsx`), `name`/`short_name`/
+  `description` do manifest PWA (`public/ronda-manifest.json`).
+- **Não tocado**, deliberadamente: identificadores de código
+  (`RondaWizard`, `RondaFinding`, `enqueueRonda`, etc. — refatoração de
+  nome de símbolo não foi pedida e não muda nada visível), a rota `/ronda`
+  em si (pedido explícito: só o nome exibido muda), a chave de storage
+  local `luna-ronda-theme`/nome do IndexedDB `luna-ronda` (mudar
+  quebraria preferência de tema e fila offline já salva de quem já
+  instalou o PWA), e mensagens de `console.error` (não são UI, só log de
+  depuração).
+- Gênero gramatical: tratado "LUNA Safety Walk" como substantivo
+  masculino em português ("o LUNA Safety Walk", "registrado", "salvo") —
+  convenção comum para estrangeirismo técnico sem gênero óbvio, decisão
+  de estilo desta sessão, não pedido explícito do Architect.
+
+### 2. Botão "LUNA Safety Walk" no modal da home
+
+`components/cognitive-session-modal.tsx`: segundo botão, mesmo padrão
+visual do botão "Luna Convergia" existente (mesmo `className`, ícone à
+esquerda + texto principal + descrição curta) — `Footprints` (lucide-react,
+já no `package.json`, `^0.469.0`) em vez de `GitBranch`, navega para
+`/ronda` via `router.push`.
+
+### Verificado nesta sessão
+
+- `npm run typecheck` — limpo.
+- `npm run test:constitution` — `Constitution checks passed (68 files
+  scanned)`.
+- `npm test` — **30/30** (suíte existente, nenhum teste novo — não há
+  suíte de componentes React neste repo).
+
+### Verificado ponta a ponta, contra produção real (Guardian) e via UI real (Playwright)
+
+`luna-frontend` local (`tsx server.ts`, porta 3000) contra um `luna-core`
+local (porta 8080) rodando a branch companheira desta sessão (`PATCH
+/convergia/ronda/:id`, ver entrada seguinte), que por sua vez fala com o
+Guardian real de produção (`strong-celebration`).
+
+- **Item 1** (Playwright): completou o wizard inteiro (Etapa A → B → C →
+  concluir) contra o backend real; confirmou `<title>` da aba, `h1` em
+  cada etapa, texto dos botões e da tela final — todos "LUNA Safety
+  Walk", nenhum "Ronda Fotográfica" residual (`assert` negativo no HTML
+  da página). Screenshot de cada etapa. A ronda sintética criada por este
+  teste foi removida do Guardian real depois (ver entrada seguinte,
+  "Limpeza" — a remoção cobriu os registros dos dois PRs desta sessão de
+  uma vez).
+- **Item 2** (Playwright): abriu o modal a partir da home real, confirmou
+  os dois botões ("Luna Convergia" preservado + "LUNA Safety Walk" novo,
+  mesmo padrão visual), clicou no novo e confirmou navegação real para
+  `/ronda` (`page.url()`, não só mudança visual).
+
+### O que NÃO foi feito
+
+- Botão "Explorar Pipeline" — inalterado, fora de escopo.
+- Nenhum teste automatizado novo commitado (nem componente React — não
+  existe suíte desse tipo aqui — nem Playwright): o script usado nesta
+  sessão viveu fora do repositório (diretório de scratch), removido ao
+  final — não faz parte do diff.
+- Merge, "Ready for review" — branch segue draft, aguardando revisão.
+

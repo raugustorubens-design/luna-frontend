@@ -57,12 +57,12 @@ export function RondaWizard() {
 
       <header className="flex items-start justify-between gap-2 border-b border-black/10 px-4 py-3 dark:border-white/10">
         <div>
-          <h1 className="text-base font-semibold text-slate-900 dark:text-slate-100">Ronda Fotográfica</h1>
+          <h1 className="text-base font-semibold text-slate-900 dark:text-slate-100">LUNA Safety Walk</h1>
           <p className="text-xs text-slate-600 dark:text-slate-400">
-            {step === "A" && "Etapa 1 de 3 — Dados da ronda"}
+            {step === "A" && "Etapa 1 de 3 — Dados do LUNA Safety Walk"}
             {step === "B" && "Etapa 2 de 3 — Categorias de risco"}
             {step === "C" && "Etapa 3 de 3 — Encerramento"}
-            {step === "done" && "Ronda registrada"}
+            {step === "done" && "LUNA Safety Walk registrado"}
           </p>
         </div>
         <ThemeToggle />
@@ -78,7 +78,7 @@ export function RondaWizard() {
                 value={metadata.titulo}
                 onChange={(event) => setMetadata({ ...metadata, titulo: event.target.value })}
                 className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-slate-900 [color-scheme:light] dark:border-white/15 dark:text-slate-100 dark:[color-scheme:dark]"
-                placeholder="ex. Ronda SSMA — Turno A"
+                placeholder="ex. LUNA Safety Walk — Turno A"
               />
             </label>
             <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
@@ -168,12 +168,12 @@ export function RondaWizard() {
           <div className="flex flex-col items-center gap-3 py-10 text-center">
             <div className="text-4xl">✓</div>
             <p className="text-sm text-slate-800 dark:text-slate-200">
-              {savedLocally ? "Ronda salva neste dispositivo." : "Ronda registrada."}
+              {savedLocally ? "LUNA Safety Walk salvo neste dispositivo." : "LUNA Safety Walk registrado."}
               <br />
-              {counts.pending > 0 ? "Enviando ao servidor assim que houver rede — acompanhe na barra acima." : "Já confirmada no servidor."}
+              {counts.pending > 0 ? "Enviando ao servidor assim que houver rede — acompanhe na barra acima." : "Já confirmado no servidor."}
             </p>
             <button type="button" onClick={startNewRonda} className="mt-2 rounded bg-cyan-500 px-4 py-2 text-sm font-medium text-black">
-              Nova ronda
+              Novo LUNA Safety Walk
             </button>
           </div>
         )}
@@ -211,7 +211,7 @@ export function RondaWizard() {
               onClick={() => void handleConclude()}
               className="rounded bg-emerald-500 px-4 py-2 text-sm font-medium text-black disabled:opacity-40"
             >
-              Concluir ronda
+              Concluir LUNA Safety Walk
             </button>
           )}
         </footer>
