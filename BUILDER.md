@@ -609,4 +609,195 @@ o comportamento original, não é suposição.
   além do que esta entrega adicionou.
 - Nenhuma automação de tema por `prefers-color-scheme` — só o botão
   manual, como pedido.
+
+## 2026-08-09 — Cores de classificação sólidas no wizard de ronda (`finding-card.tsx`)
+
+**Contexto:** instrução explícita, escopo restrito ao campo
+"Classificação" de `components/ronda/finding-card.tsx` — o seletor de
+estado (não avaliado/identificado/inexistente) do mesmo componente não
+foi tocado, decisão do Architect (conceito diferente, sem
+correspondência no relatório final).
+
+### O que foi entregue
+
+- `<select>` nativo de Classificação trocado por um seletor de botões
+  (`role="radiogroup"`, cada opção `button role="radio"`), mesmo
+  mecanismo de interação do seletor de estado logo acima no componente.
+- Selecionado: preenchimento sólido na cor exata do protótipo
+  (`#2E7D32` positivo, `#E8A33D` atenção, `#C62828` não conformidade),
+  texto branco por cima. Cores como classe Tailwind arbitrária estática
+  (`bg-[#2E7D32]` etc., não um template dinâmico) para o JIT do
+  Tailwind conseguir escanear a classe no build.
+- Não selecionado: mesmo tratamento neutro já usado nas opções
+  não-selecionadas do seletor de estado (`border-white/15 text-slate-400
+  hover:border-white/30`) — consistência interna do componente.
+- `FINDING_CLASSIFICATIONS`/`FINDING_CLASSIFICATION_LABELS` não
+  mudaram — só a aparência do seletor.
+
+### Achado durante a verificação (relevante, leia antes de aprovar)
+
+Contraste real medido via `getComputedStyle` no Chromium real (não só
+"parece branco"), fórmula WCAG padrão (luminância relativa sRGB):
+
+| Classificação | Fundo | Texto | Contraste medido |
+|---|---|---|---|
+| Positivo | `#2E7D32` | `#FFFFFF` | **5.13:1** — passa AA texto normal (≥4.5:1) |
+| Atenção | `#E8A33D` | `#FFFFFF` | **2.16:1** — não passa nem AA texto normal (4.5:1) nem AA texto grande (3:1) |
+| Não Conformidade | `#C62828` | `#FFFFFF` | **5.62:1** — passa AA texto normal |
+
+Tentei ajustar o branco pra um tom levemente diferente antes de aceitar
+isso (a instrução previa essa saída), mas matematicamente não há
+solução dentro de "bem próximo do branco": a luminância relativa do
+fundo `#E8A33D` já é ~0.437 sozinha — mesmo com texto branco puro
+(luminância 1, o máximo possível), o teto de contraste alcançável
+contra esse fundo é ~2.16:1, e qualquer tom "quase branco" fica ainda
+mais perto dessa luminância, não mais longe. Melhorar de verdade exigiria
+texto escuro (ex. preto), o que contradiz a instrução explícita de
+"texto claro/branco por cima" pros três — não fiz essa troca por conta
+própria porque a instrução foi explícita sobre a cor de texto, mas
+registro aqui: **"Atenção" fica abaixo do padrão WCAG AA de contraste
+de texto**, mesmo com a melhor implementação possível dentro do
+requisito dado. Capturas de tela (`/tmp/classificacao-*.png`, não
+fazem parte deste PR) mostram que o texto continua legível a olho nu
+sobre o laranja — não é ilegível na prática, só não passa no critério
+formal de acessibilidade. Recomendo ao Architect decidir entre manter
+como está (cor exata do protótipo, prioridade sobre WCAG) ou usar texto
+escuro só para "Atenção" — não tomei essa decisão sozinho.
+
+**Corrigido (mesma sessão, instrução do Engineer):** fundo `#E8A33D`
+mantido exato (cor de marca), texto trocado de `#FFFFFF` para `#1E2761`
+(Midnight, já usado em outro lugar do projeto) só em "Atenção".
+Recalculado (mesma metodologia, `getComputedStyle` no Chromium real):
+luminância de `#1E2761` ≈ 0.0259, contraste contra `#E8A33D`
+(luminância ≈ 0.437) = **6.41:1 — passa AA texto normal (≥4.5:1)**, não
+foi preciso cair pra preto puro. Positivo e Não Conformidade não
+mudaram (`#FFFFFF`, já passavam AA). Screenshot de confirmação em
+`/tmp/fix1-depois-aten--o.png` (não faz parte do PR) — texto legível
+sem ambiguidade, não só "passa no número".
+
+### Verificado nesta sessão
+
+- `pnpm run typecheck` — limpo.
+- `pnpm run test:constitution` — `Constitution checks passed (60 files
+  scanned)`.
+- `pnpm test` — **30/30** (suíte existente; classificação é só
+  componente de UI, sem teste de unidade dedicado pra esse tipo de
+  arquivo no repositório).
+- **Playwright, contra o app real** (`tsx server.ts` local, porta 3000
+  neste ambiente): preenchi a Etapa 1 com dado sintético, avancei pra
+  Etapa 2, marquei "Trabalho em Altura" como "Risco identificado" e
+  cliquei nas 3 opções de Classificação em sequência. Para cada uma,
+  medi `getComputedStyle` do botão selecionado (cor de fundo real
+  batendo com o hex esperado, `aria-checked="true"` confirmado) e tirei
+  screenshot da tela inteira — ver achado de contraste acima. Script de
+  verificação escrito só para esta sessão, removido antes do commit —
+  não faz parte do diff.
+- **Correção do achado de contraste (mesma sessão, ver acima)**:
+  `pnpm run typecheck` limpo, `pnpm run test:constitution` (60 arquivos)
+  e `pnpm test` (30/30) repetidos depois da mudança de cor de texto —
+  sem regressão. Repeti a verificação via Playwright das 3 classificações
+  (mesmo script/metodologia), confirmando `text=rgb(30, 39, 97)` no botão
+  "Atenção" selecionado e contraste `6.41:1`.
+
+### O que NÃO foi feito
+
+- Seletor de estado (não avaliado/identificado/inexistente) — cores e
+  estilo continuam exatamente como estavam.
+- `FINDING_CLASSIFICATIONS` — lista de opções não mudou.
+- ~~Nenhuma correção de contraste aplicada por conta própria em
+  "Atenção"~~ — **corrigido nesta sessão**, por instrução explícita do
+  Engineer (ver "Achado durante a verificação" acima) — não é mais uma
+  pendência.
+- Merge, "Ready for review" — branch segue draft, aguardando revisão.
+
+## 2026-08-09 — Rebase pós-merge do PR #18 (tema claro/escuro) + acessibilidade de teclado no seletor de Classificação
+
+**Contexto:** o PR #18 (tema claro/escuro) foi mergeado em `main`
+depois do rebase anterior desta branch. Os dois PRs mexem no mesmo
+arquivo (`finding-card.tsx`) — #18 converteu o componente inteiro para
+pares de classe `dark:`, #17 (esta branch) trocou o `<select>` de
+Classificação por um seletor de botões. Desta vez o conflito não foi só
+o acréscimo de sempre no fim do `BUILDER.md` — houve conflito de
+conteúdo real em `finding-card.tsx`, porque as duas mudanças nunca
+tinham sido vistas juntas.
+
+### O que foi entregue
+
+- **Rebase** (`git rebase origin/main`, não merge) das duas commits
+  desta branch em cima do `main` já com o PR #18 mergeado.
+- **Resolução do conflito em `finding-card.tsx`**: mantida a estrutura
+  de botões do seletor de Classificação (introduzida por esta branch),
+  mas com as classes de tema claro/escuro do PR #18 aplicadas em cima —
+  `text-slate-400` (só escuro) virou `text-slate-600 dark:text-slate-400`
+  no wrapper, e o estado "não selecionado" dos botões de classificação
+  ganhou o mesmo par `border-black/15 ... dark:border-white/15 ...` que
+  o seletor de estado logo acima já usa — consistência interna do
+  componente, mesmo padrão que o PR #18 já tinha estabelecido em todo o
+  resto do arquivo. `CLASSIFICATION_FILL_CLASS` (preenchimento sólido
+  quando selecionado) não precisou de `dark:` — são cores de marca fixas
+  (`#2E7D32`/`#E8A33D`/`#C62828`), o mesmo motivo pelo qual os botões
+  `bg-cyan-500`/`bg-emerald-500` de avançar/concluir também não têm
+  variante de tema.
+- **Resolução do conflito no `BUILDER.md`**: mesmo padrão de sempre
+  (acréscimo no mesmo ponto do arquivo) — mantidas as entradas do PR #18
+  e desta branch, ordem cronológica preservada, cada uma com suas
+  próprias seções `### Verificado nesta sessão`/`### O que NÃO foi
+  feito` completas (não fundidas).
+- **Acessibilidade de teclado no seletor de Classificação** (achado de
+  revisão automatizada do Codex neste PR, linha 176 de
+  `finding-card.tsx`): a troca do `<select>` nativo por botões deu
+  clique, mas não deu o comportamento padrão de radiogroup por teclado
+  que o `<select>` nativo tinha de graça — um único tab stop pro grupo
+  inteiro, setas movendo E selecionando entre as opções (padrão
+  WAI-ARIA APG para radiogroup, "seleção segue o foco"). Corrigido com
+  `tabIndex` roving (só a opção selecionada — ou a primeira, se nada
+  selecionado ainda — tem `tabIndex=0`, as outras `-1`) + `onKeyDown`
+  tratando `ArrowRight`/`ArrowDown` (próxima opção) e
+  `ArrowLeft`/`ArrowUp` (anterior), com wrap-around nas pontas e foco
+  movido pra o botão recém-selecionado via `querySelector` dentro do
+  `radiogroup` mais próximo. O seletor de Estado (acima no mesmo
+  componente) tem a mesma lacuna, mas é pré-existente — não introduzida
+  por este PR — e ficou fora de escopo desta correção pontual.
+
+### Verificado nesta sessão
+
+- `pnpm run typecheck` — limpo.
+- `pnpm run test:constitution` — `Constitution checks passed (63 files
+  scanned)`.
+- `pnpm test` — **30/30** (suíte existente).
+- **Playwright, contra o app real** (`tsx server.ts` local, porta 3000
+  neste ambiente) — dois scripts, o ponto de risco real desta sessão
+  (as duas mudanças nunca tinham sido testadas juntas):
+  - **Coexistência classificação + tema**: preenchi a Etapa 1, avancei,
+    marquei "Risco identificado", e cliquei nas 3 classificações **nos
+    dois modos** (escuro primeiro, depois alternando pra claro sem
+    recarregar a página). Confirmado via `getComputedStyle` que as 3
+    cores de fundo/texto são **idênticas nos dois modos**
+    (`rgb(46,125,50)`/branco Positivo, `rgb(232,163,61)`/`rgb(30,39,97)`
+    Atenção, `rgb(198,40,40)`/branco Não Conformidade) — exatamente o
+    esperado, já que são cores de marca fixas, não deveriam variar com
+    o tema. Screenshots de tela inteira da Etapa B nos dois modos
+    (`/tmp/final-{escuro,claro}-etapaB-full.png`, não fazem parte do
+    PR) confirmam visualmente que os botões não-selecionados de
+    Classificação (`Positivo`/`Atenção` quando `Não Conformidade` está
+    selecionada) também seguem o tema corretamente, e que nada mais no
+    card ficou afetado pela coexistência das duas mudanças.
+  - **Navegação por teclado**: focei "Positivo" via `.focus()` e
+    disparei `ArrowRight`/`ArrowLeft` reais via `page.keyboard.press`
+    (não simulação de evento sintético) — confirmado `aria-checked` e
+    `document.activeElement` corretos a cada passo, incluindo
+    wrap-around nas duas pontas (Não Conformidade → Positivo indo pra
+    frente, Positivo → Não Conformidade indo pra trás), e `tabIndex`
+    roving correto antes de qualquer seleção (`[0,-1,-1]`, foco só em
+    "Positivo") e depois de selecionar "Não Conformidade"
+    (`[-1,-1,0]`).
+  - Scripts de verificação (2) escritos só para esta sessão, removidos
+    antes do commit — não fazem parte do diff.
+
+### O que NÃO foi feito
+
+- Nenhuma mudança na lacuna de teclado do seletor de Estado
+  (não avaliado/identificado/inexistente) — pré-existente, fora do
+  escopo do achado do Codex (que apontou especificamente o seletor de
+  Classificação, introduzido por este PR).
 - Merge, "Ready for review" — branch segue draft, aguardando revisão.

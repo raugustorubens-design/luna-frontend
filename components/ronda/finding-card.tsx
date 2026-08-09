@@ -11,8 +11,30 @@ import {
   FINDING_SEVERITY_LABELS,
   type RondaFinding,
   type RiskState,
+  type FindingClassification,
 } from "@/lib/ronda/types";
 import { compressPhoto } from "@/lib/ronda/photo";
+
+/**
+ * Cores exatas do protótipo real do relatório final (não aproximadas para
+ * a paleta padrão do Tailwind) — mesmo par usado no selo do relatório e
+ * aqui no wizard, decisão do Architect para manter as duas telas
+ * consistentes. Preenchimento sólido (classe estática, não um template
+ * dinâmico, para o Tailwind JIT conseguir escanear a classe no build) +
+ * texto claro por cima — exceto "Atenção" (ver abaixo).
+ *
+ * "Atenção" (`#E8A33D`) usa texto escuro (`#1E2761`, Midnight, já usado em
+ * outro lugar do projeto), não branco: medido nesta sessão, texto branco
+ * sobre esse fundo dá só 2.16:1 de contraste (abaixo de AA, 4.5:1) — o
+ * fundo em si já é claro demais pra qualquer texto quase-branco passar.
+ * Fundo mantido exato (cor de marca, do protótipo), corrigido só o texto.
+ * Positivo/Não Conformidade continuam com texto branco — já passam AA.
+ */
+const CLASSIFICATION_FILL_CLASS: Record<FindingClassification, string> = {
+  positivo: "border-transparent bg-[#2E7D32] text-white",
+  atencao: "border-transparent bg-[#E8A33D] text-[#1E2761]",
+  nao_conformidade: "border-transparent bg-[#C62828] text-white",
+};
 
 /**
  * Um card por categoria de risco (ADR-021, Decisão 1, refinamento): o
@@ -60,6 +82,26 @@ export function FindingCard({ finding, onChange }: { finding: RondaFinding; onCh
 
   function removePhoto(index: number) {
     onChange({ ...finding, fotos: (finding.fotos ?? []).filter((_, i) => i !== index) });
+  }
+
+  // Comportamento padrão de radiogroup (WAI-ARIA APG): setas move o foco E a
+  // seleção (não só o foco) entre as opções, com wrap-around nas pontas —
+  // o clique sozinho (já existente) não dá isso de graça pra teclado/leitor
+  // de tela, precisa de roving tabIndex + handler de teclado.
+  function handleClassificationKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, currentIndex: number) {
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      nextIndex = (currentIndex + 1) % FINDING_CLASSIFICATIONS.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      nextIndex = (currentIndex - 1 + FINDING_CLASSIFICATIONS.length) % FINDING_CLASSIFICATIONS.length;
+    }
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const nextOption = FINDING_CLASSIFICATIONS[nextIndex];
+    onChange({ ...finding, classificacao: nextOption });
+    const group = event.currentTarget.closest('[role="radiogroup"]');
+    const nextButton = group?.querySelectorAll('[role="radio"]')[nextIndex] as HTMLElement | undefined;
+    nextButton?.focus();
   }
 
   const isIdentified = finding.estado === "identificado";
@@ -142,23 +184,33 @@ export function FindingCard({ finding, onChange }: { finding: RondaFinding; onCh
             {photoError && <p className="text-red-400">{photoError}</p>}
           </div>
 
-          <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
-            Classificação
-            <select
-              value={finding.classificacao ?? ""}
-              onChange={(event) => onChange({ ...finding, classificacao: event.target.value as RondaFinding["classificacao"] })}
-              className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-sm text-slate-900 [color-scheme:light] dark:border-white/15 dark:text-slate-100 dark:[color-scheme:dark]"
+          <div className="flex flex-col gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+            <span>Classificação</span>
+            <div
+              className="flex flex-wrap gap-2"
+              role="radiogroup"
+              aria-label={`Classificação — ${RISK_CATEGORY_LABELS[finding.categoria]}`}
             >
-              <option value="" disabled>
-                selecione…
-              </option>
-              {FINDING_CLASSIFICATIONS.map((option) => (
-                <option key={option} value={option}>
+              {FINDING_CLASSIFICATIONS.map((option, index) => (
+                <button
+                  key={option}
+                  type="button"
+                  role="radio"
+                  aria-checked={finding.classificacao === option}
+                  tabIndex={finding.classificacao === option || (!finding.classificacao && index === 0) ? 0 : -1}
+                  onClick={() => onChange({ ...finding, classificacao: option })}
+                  onKeyDown={(event) => handleClassificationKeyDown(event, index)}
+                  className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
+                    finding.classificacao === option
+                      ? CLASSIFICATION_FILL_CLASS[option]
+                      : "border-black/15 text-slate-600 hover:border-black/30 dark:border-white/15 dark:text-slate-400 dark:hover:border-white/30"
+                  }`}
+                >
                   {FINDING_CLASSIFICATION_LABELS[option]}
-                </option>
+                </button>
               ))}
-            </select>
-          </label>
+            </div>
+          </div>
 
           <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
             Gravidade
