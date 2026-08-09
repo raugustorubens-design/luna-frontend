@@ -84,6 +84,26 @@ export function FindingCard({ finding, onChange }: { finding: RondaFinding; onCh
     onChange({ ...finding, fotos: (finding.fotos ?? []).filter((_, i) => i !== index) });
   }
 
+  // Comportamento padrão de radiogroup (WAI-ARIA APG): setas move o foco E a
+  // seleção (não só o foco) entre as opções, com wrap-around nas pontas —
+  // o clique sozinho (já existente) não dá isso de graça pra teclado/leitor
+  // de tela, precisa de roving tabIndex + handler de teclado.
+  function handleClassificationKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, currentIndex: number) {
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      nextIndex = (currentIndex + 1) % FINDING_CLASSIFICATIONS.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      nextIndex = (currentIndex - 1 + FINDING_CLASSIFICATIONS.length) % FINDING_CLASSIFICATIONS.length;
+    }
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const nextOption = FINDING_CLASSIFICATIONS[nextIndex];
+    onChange({ ...finding, classificacao: nextOption });
+    const group = event.currentTarget.closest('[role="radiogroup"]');
+    const nextButton = group?.querySelectorAll('[role="radio"]')[nextIndex] as HTMLElement | undefined;
+    nextButton?.focus();
+  }
+
   const isIdentified = finding.estado === "identificado";
 
   return (
@@ -171,13 +191,15 @@ export function FindingCard({ finding, onChange }: { finding: RondaFinding; onCh
               role="radiogroup"
               aria-label={`Classificação — ${RISK_CATEGORY_LABELS[finding.categoria]}`}
             >
-              {FINDING_CLASSIFICATIONS.map((option) => (
+              {FINDING_CLASSIFICATIONS.map((option, index) => (
                 <button
                   key={option}
                   type="button"
                   role="radio"
                   aria-checked={finding.classificacao === option}
+                  tabIndex={finding.classificacao === option || (!finding.classificacao && index === 0) ? 0 : -1}
                   onClick={() => onChange({ ...finding, classificacao: option })}
+                  onKeyDown={(event) => handleClassificationKeyDown(event, index)}
                   className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
                     finding.classificacao === option
                       ? CLASSIFICATION_FILL_CLASS[option]
