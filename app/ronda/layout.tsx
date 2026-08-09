@@ -9,8 +9,8 @@ import { RondaThemeProvider } from "@/components/ronda/theme-provider";
  * do Next.js), sem afetar `/forge` nem o Modo Usuário.
  */
 export const metadata: Metadata = {
-  title: "LUNA Ronda",
-  description: "Coleta de ronda de segurança (SSMA) com fila offline — ADR-021",
+  title: "LUNA Safety Walk",
+  description: "Coleta de segurança (SSMA) do LUNA Safety Walk, com fila offline — ADR-021",
   manifest: "/ronda-manifest.json",
   // iOS não segue os ícones do manifest.json de forma confiável em todas as
   // versões — precisa também do <link rel="apple-touch-icon"> gerado a
@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "LUNA Ronda",
+    title: "LUNA Safety Walk",
   },
 };
 

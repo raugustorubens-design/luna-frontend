@@ -1,7 +1,7 @@
 {
-  "name": "LUNA Ronda — Coleta de Ronda Fotográfica",
-  "short_name": "LUNA Ronda",
-  "description": "Wizard de coleta de ronda de segurança (SSMA) com fila offline — ADR-021",
+  "name": "LUNA Safety Walk",
+  "short_name": "LUNA Safety Walk",
+  "description": "Wizard de coleta do LUNA Safety Walk (SSMA) com fila offline — ADR-021",
   "start_url": "/ronda",
   "scope": "/ronda",
   "display": "standalone",
