@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import {
-  RISK_CATEGORY_LABELS,
+  FLAG_LABELS,
   RISK_STATES,
   RISK_STATE_LABELS,
   FINDING_CLASSIFICATIONS,
@@ -14,6 +14,7 @@ import {
   type FindingClassification,
 } from "@/lib/ronda/types";
 import { compressPhoto } from "@/lib/ronda/photo";
+import { saveOriginalPhoto } from "@/lib/ronda/db";
 
 /**
  * Cores exatas do protótipo real do relatório final (não aproximadas para
@@ -37,19 +38,29 @@ const CLASSIFICATION_FILL_CLASS: Record<FindingClassification, string> = {
 };
 
 /**
- * Um card por categoria de risco (ADR-021, Decisão 1, refinamento): o
- * seletor de estado de 3 opções é a primeira coisa que aparece — "não
- * avaliado" (pendente, bloqueia a conclusão), "risco identificado" (abre o
- * formulário completo do achado) e "considerado e inexistente" (marcação
- * explícita, sem exigir mais nada, mas não é o mesmo que deixar em branco).
- * Foto nunca é obrigatória, em nenhum estado — por isso não faz parte da
- * validação local deste componente, só os 4 campos que o backend também
- * exige quando `estado === "identificado"`.
+ * Um card por achado (achado dinâmico — não mais um por categoria fixa, ver
+ * `lib/ronda/types.ts`). O seletor de estado de 3 opções continua existindo
+ * (`requiredWhenIdentified` no backend depende dele), mas um achado nasce
+ * pelo "+" já como "identificado" — "não avaliado" só aparece se alguém
+ * reverter manualmente. Foto nunca é obrigatória, em nenhum estado — por
+ * isso não faz parte da validação local deste componente, só os 4 campos
+ * que o backend também exige quando `estado === "identificado"`.
  */
-export function FindingCard({ finding, onChange }: { finding: RondaFinding; onChange: (next: RondaFinding) => void }) {
+export function FindingCard({
+  finding,
+  onChange,
+  onDuplicate,
+}: {
+  finding: RondaFinding;
+  onChange: (next: RondaFinding) => void;
+  /** "+" num achado já preenchido, pra duplicar (Decisão 3, refinamento 3) — omitido esconde o botão (ex. card ainda sem campos preenchidos). */
+  onDuplicate?: (finding: RondaFinding) => void;
+}) {
   const [compressing, setCompressing] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const title = (finding.flagId && FLAG_LABELS[finding.flagId]) || "Achado manual";
 
   function setEstado(estado: RiskState) {
     if (estado === "identificado") {
@@ -60,7 +71,7 @@ export function FindingCard({ finding, onChange }: { finding: RondaFinding; onCh
       // decidiu não manter, mas sem perder a foto: se quiser reconsiderar,
       // o usuário volta pra "identificado" e refaz (raro o bastante para
       // não justificar guardar um "achado desfeito" escondido em memória).
-      onChange({ categoria: finding.categoria, estado });
+      onChange({ id: finding.id, flagId: finding.flagId, estado });
     }
   }
 
@@ -70,8 +81,17 @@ export function FindingCard({ finding, onChange }: { finding: RondaFinding; onCh
     setPhotoError(null);
     setCompressing(true);
     try {
-      const compressed = await Promise.all(Array.from(files).map(compressPhoto));
+      const fileList = Array.from(files);
+      const compressed = await Promise.all(fileList.map(compressPhoto));
+      const startIndex = (finding.fotos ?? []).length;
       onChange({ ...finding, fotos: [...(finding.fotos ?? []), ...compressed] });
+      // Foto original (não comprimida) preservada só localmente — Decisão 4
+      // da revisão de arquitetura, guardar a versão de maior resolução pra
+      // uma futura "versão de apresentação" (Fase 2) poder trabalhar com
+      // qualidade melhor que o teto de 1280px da versão de campo. Nunca faz
+      // parte de `fotos` (que é o que a fila offline envia) — só um registro
+      // paralelo em IndexedDB, associado ao mesmo achado por `id`.
+      await Promise.all(fileList.map((file, i) => saveOriginalPhoto(finding.id, startIndex + i, file)));
     } catch (error) {
       setPhotoError(error instanceof Error ? error.message : "Falha ao processar a foto.");
     } finally {
@@ -109,15 +129,26 @@ export function FindingCard({ finding, onChange }: { finding: RondaFinding; onCh
   return (
     <div className="rounded-lg border border-black/10 bg-black/[0.03] p-3 dark:border-white/10 dark:bg-white/[0.03]">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{RISK_CATEGORY_LABELS[finding.categoria]}</h3>
-        {finding.estado === "nao_avaliado" && (
-          <span className="rounded-full bg-amber-400/40 px-2 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
-            pendente
-          </span>
-        )}
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
+        <div className="flex items-center gap-2">
+          {finding.estado === "nao_avaliado" && (
+            <span className="rounded-full bg-amber-400/40 px-2 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
+              pendente
+            </span>
+          )}
+          {onDuplicate && finding.estado === "identificado" && (
+            <button
+              type="button"
+              onClick={() => onDuplicate(finding)}
+              className="rounded border border-black/15 px-2 py-1 text-[10px] text-slate-600 hover:border-cyan-500 hover:text-cyan-600 dark:border-white/15 dark:text-slate-400 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
+            >
+              + Duplicar
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={`Estado — ${RISK_CATEGORY_LABELS[finding.categoria]}`}>
+      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={`Estado — ${title}`}>
         {RISK_STATES.map((estado) => (
           <button
             key={estado}
@@ -189,7 +220,7 @@ export function FindingCard({ finding, onChange }: { finding: RondaFinding; onCh
             <div
               className="flex flex-wrap gap-2"
               role="radiogroup"
-              aria-label={`Classificação — ${RISK_CATEGORY_LABELS[finding.categoria]}`}
+              aria-label={`Classificação — ${title}`}
             >
               {FINDING_CLASSIFICATIONS.map((option, index) => (
                 <button

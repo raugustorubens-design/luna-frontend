@@ -1,18 +1,23 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   emptyMetadata,
   emptyFindings,
   emptyClosing,
   metadataComplete,
-  pendingCategories as pendingCategoriesOf,
-  RISK_CATEGORY_LABELS,
+  pendingFindings,
+  newFinding,
+  duplicateFinding,
+  FLAG_LABELS,
   type RondaMetadata,
   type RondaFinding,
   type RondaClosing,
+  type RondaFlag,
+  type RondaSuggestion,
 } from "@/lib/ronda/types";
+import { getFlags, getSugestoes, RondaSubmitError } from "@/lib/ronda/api-client";
 import { enqueueRonda } from "@/lib/ronda/db";
 import { useRondaQueue } from "@/lib/ronda/use-ronda-queue";
 import { QueueStatusBar } from "./queue-status-bar";
@@ -20,6 +25,66 @@ import { FindingCard } from "./finding-card";
 import { ThemeToggle } from "./theme-toggle";
 
 type Step = "A" | "B" | "C" | "done";
+
+/**
+ * Etapa B (achado dinâmico — revisão de arquitetura, Decisões 1-3): a
+ * pessoa marca quantos flags quiser (checkbox, não radio). Marcar um flag
+ * de risco busca sugestões reais (`GET /convergia/ronda/sugestoes`) — cada
+ * uma é só um botão "+ [texto]"; apertar cria um achado novo (sempre pelo
+ * mesmo `FindingCard`, nunca um formulário diferente por origem). Flag sem
+ * sugestão estruturada (`passivo_trabalhista`) mostra só um "+" manual.
+ */
+function FlagSection({
+  flag,
+  checked,
+  onToggle,
+  suggestions,
+  onAddFromSuggestion,
+  onAddManual,
+}: {
+  flag: RondaFlag;
+  checked: boolean;
+  onToggle: () => void;
+  suggestions: RondaSuggestion[] | "loading" | undefined;
+  onAddFromSuggestion: (suggestion: RondaSuggestion) => void;
+  onAddManual: () => void;
+}) {
+  return (
+    <div className="rounded-lg border border-black/10 p-3 dark:border-white/10">
+      <label className="flex items-center gap-2 text-sm text-slate-900 dark:text-slate-100">
+        <input type="checkbox" checked={checked} onChange={onToggle} className="[color-scheme:light] dark:[color-scheme:dark]" />
+        {FLAG_LABELS[flag.nome] ?? flag.nome}
+      </label>
+
+      {checked && (
+        <div className="mt-2 flex flex-col gap-1.5 pl-6">
+          {suggestions === "loading" && <p className="text-xs text-slate-500 dark:text-slate-400">Carregando sugestões…</p>}
+          {Array.isArray(suggestions) &&
+            suggestions.map((suggestion) => (
+              <button
+                key={suggestion.controleRiscoId}
+                type="button"
+                onClick={() => onAddFromSuggestion(suggestion)}
+                className="rounded border border-dashed border-black/20 px-2 py-1.5 text-left text-xs text-slate-700 hover:border-cyan-500 hover:text-cyan-700 dark:border-white/20 dark:text-slate-300 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
+              >
+                + {suggestion.descricao}
+              </button>
+            ))}
+          {Array.isArray(suggestions) && suggestions.length === 0 && (
+            <p className="text-xs text-slate-500 dark:text-slate-400">Sem sugestão cadastrada — adicione manualmente.</p>
+          )}
+          <button
+            type="button"
+            onClick={onAddManual}
+            className="rounded border border-black/15 px-2 py-1.5 text-left text-xs text-slate-600 hover:border-cyan-500 hover:text-cyan-600 dark:border-white/15 dark:text-slate-400 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
+          >
+            + Adicionar achado manualmente para este flag
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function RondaWizard() {
   const { counts, syncNow } = useRondaQueue();
@@ -29,11 +94,54 @@ export function RondaWizard() {
   const [closing, setClosing] = useState<RondaClosing>(emptyClosing);
   const [savedLocally, setSavedLocally] = useState(false);
 
-  const pendingCategories = useMemo(() => pendingCategoriesOf(findings), [findings]);
-  const canConclude = pendingCategories.length === 0;
+  const [flags, setFlags] = useState<RondaFlag[]>([]);
+  const [flagsError, setFlagsError] = useState<string | null>(null);
+  const [checkedFlags, setCheckedFlags] = useState<Set<string>>(new Set());
+  const [suggestionsByFlag, setSuggestionsByFlag] = useState<Record<string, RondaSuggestion[] | "loading">>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    getFlags()
+      .then((result) => {
+        if (!cancelled) setFlags(result);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setFlagsError(err instanceof RondaSubmitError ? err.message : "Falha ao carregar o catálogo de flags.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const pending = useMemo(() => pendingFindings(findings), [findings]);
+  const canConclude = pending.length === 0;
 
   function updateFinding(next: RondaFinding) {
-    setFindings((current) => current.map((f) => (f.categoria === next.categoria ? next : f)));
+    setFindings((current) => current.map((f) => (f.id === next.id ? next : f)));
+  }
+
+  function addFinding(finding: RondaFinding) {
+    setFindings((current) => [...current, finding]);
+  }
+
+  function toggleFlag(flag: RondaFlag) {
+    setCheckedFlags((current) => {
+      const next = new Set(current);
+      if (next.has(flag.nome)) {
+        next.delete(flag.nome);
+        return next;
+      }
+      next.add(flag.nome);
+      return next;
+    });
+
+    if (checkedFlags.has(flag.nome) || flag.bibliotecaRiscoId === null) return;
+    if (suggestionsByFlag[flag.nome]) return;
+
+    setSuggestionsByFlag((current) => ({ ...current, [flag.nome]: "loading" }));
+    getSugestoes(flag.nome)
+      .then((sugestoes) => setSuggestionsByFlag((current) => ({ ...current, [flag.nome]: sugestoes })))
+      .catch(() => setSuggestionsByFlag((current) => ({ ...current, [flag.nome]: [] })));
   }
 
   async function handleConclude() {
@@ -48,6 +156,8 @@ export function RondaWizard() {
     setMetadata(emptyMetadata());
     setFindings(emptyFindings());
     setClosing(emptyClosing());
+    setCheckedFlags(new Set());
+    setSuggestionsByFlag({});
     setSavedLocally(false);
     setStep("A");
   }
@@ -61,7 +171,7 @@ export function RondaWizard() {
           <h1 className="text-base font-semibold text-slate-900 dark:text-slate-100">LUNA Safety Walk</h1>
           <p className="text-xs text-slate-600 dark:text-slate-400">
             {step === "A" && "Etapa 1 de 3 — Dados do LUNA Safety Walk"}
-            {step === "B" && "Etapa 2 de 3 — Categorias de risco"}
+            {step === "B" && "Etapa 2 de 3 — Flags de risco e achados"}
             {step === "C" && "Etapa 3 de 3 — Encerramento"}
             {step === "done" && "LUNA Safety Walk registrado"}
           </p>
@@ -127,10 +237,43 @@ export function RondaWizard() {
         )}
 
         {step === "B" && (
-          <div className="flex flex-col gap-3">
-            {findings.map((finding) => (
-              <FindingCard key={finding.categoria} finding={finding} onChange={updateFinding} />
-            ))}
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <h2 className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Flags</h2>
+              {flagsError && <p className="text-xs text-red-400">{flagsError}</p>}
+              {flags.map((flag) => (
+                <FlagSection
+                  key={flag.nome}
+                  flag={flag}
+                  checked={checkedFlags.has(flag.nome)}
+                  onToggle={() => toggleFlag(flag)}
+                  suggestions={suggestionsByFlag[flag.nome]}
+                  onAddFromSuggestion={(suggestion) => addFinding(newFinding(flag.nome, { descricao: suggestion.descricao }))}
+                  onAddManual={() => addFinding(newFinding(flag.nome))}
+                />
+              ))}
+              <button
+                type="button"
+                onClick={() => addFinding(newFinding(null))}
+                className="self-start rounded border border-black/15 px-3 py-1.5 text-xs text-slate-700 hover:border-cyan-500 hover:text-cyan-600 dark:border-white/15 dark:text-slate-300 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
+              >
+                + Achado avulso (sem flag)
+              </button>
+            </div>
+
+            {findings.length > 0 && (
+              <div className="flex flex-col gap-3 border-t border-black/10 pt-3 dark:border-white/10">
+                <h2 className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Achados ({findings.length})</h2>
+                {findings.map((finding) => (
+                  <FindingCard
+                    key={finding.id}
+                    finding={finding}
+                    onChange={updateFinding}
+                    onDuplicate={(f) => addFinding(duplicateFinding(f))}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -157,12 +300,7 @@ export function RondaWizard() {
 
             {!canConclude && (
               <div className="rounded border border-amber-400/40 bg-amber-400/40 p-3 text-xs text-amber-900 dark:bg-amber-400/10 dark:text-amber-300">
-                <p className="mb-1 font-medium">Ainda falta avaliar {pendingCategories.length} categoria(s) antes de concluir:</p>
-                <ul className="list-inside list-disc">
-                  {pendingCategories.map((f) => (
-                    <li key={f.categoria}>{RISK_CATEGORY_LABELS[f.categoria]}</li>
-                  ))}
-                </ul>
+                <p className="mb-1 font-medium">Ainda há {pending.length} achado(s) marcado(s) como &quot;não avaliado&quot; — revise antes de concluir.</p>
               </div>
             )}
           </div>
