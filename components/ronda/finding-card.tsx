@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   FLAG_LABELS,
   RISK_STATES,
@@ -10,11 +10,13 @@ import {
   FINDING_SEVERITIES,
   FINDING_SEVERITY_LABELS,
   type RondaFinding,
+  type RondaPhoto,
   type RiskState,
   type FindingClassification,
 } from "@/lib/ronda/types";
 import { compressPhoto } from "@/lib/ronda/photo";
 import { saveOriginalPhoto } from "@/lib/ronda/db";
+import { getFotoSugestao } from "@/lib/ronda/api-client";
 
 /**
  * Cores exatas do protótipo real do relatório final (não aproximadas para
@@ -50,15 +52,30 @@ export function FindingCard({
   finding,
   onChange,
   onDuplicate,
+  onSuggestionApplied,
 }: {
   finding: RondaFinding;
   onChange: (next: RondaFinding) => void;
   /** "+" num achado já preenchido, pra duplicar (Decisão 3, refinamento 3) — omitido esconde o botão (ex. card ainda sem campos preenchidos). */
   onDuplicate?: (finding: RondaFinding) => void;
+  /** Reporta pro chamador quais campos uma sugestão de foto (Fase 4) de fato preencheu, pra Parte 3 (correção humana vira aprendizado) comparar sugerido-vs-salvo na hora de concluir. */
+  onSuggestionApplied?: (findingId: string, sugerido: Partial<RondaFinding>) => void;
 }) {
   const [compressing, setCompressing] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [lowConfidenceFields, setLowConfidenceFields] = useState<Set<"classificacao" | "gravidade">>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // A leitura de foto (Fase 4) é assíncrona e pode terminar depois de vários
+  // re-renders — `finding` capturado no fechamento de `handlePhotoChange` no
+  // momento do upload ficaria desatualizado se o humano editar outro campo
+  // enquanto a sugestão ainda carrega. Um ref sincronizado a cada render
+  // garante que o merge da sugestão parte do valor mais recente, não do
+  // instantâneo de quando o upload começou.
+  const findingRef = useRef(finding);
+  useEffect(() => {
+    findingRef.current = finding;
+  }, [finding]);
 
   const title = (finding.flagId && FLAG_LABELS[finding.flagId]) || "Achado manual";
 
@@ -92,12 +109,51 @@ export function FindingCard({
       // parte de `fotos` (que é o que a fila offline envia) — só um registro
       // paralelo em IndexedDB, associado ao mesmo achado por `id`.
       await Promise.all(fileList.map((file, i) => saveOriginalPhoto(finding.id, startIndex + i, file)));
+
+      void applyPhotoSuggestion(compressed[0]);
     } catch (error) {
       setPhotoError(error instanceof Error ? error.message : "Falha ao processar a foto.");
     } finally {
       setCompressing(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  }
+
+  /**
+   * Segunda fonte de sugestão (Fase 4 do ADR-021 original, Decisão 2 da
+   * revisão de arquitetura) — dispara em paralelo ao upload, sem bloquear
+   * (`void`, não fica no `try` acima: uma sugestão de foto que falha não é
+   * erro de upload). Só preenche campo vazio — nunca sobrescreve o que o
+   * humano já escreveu, mesmo princípio de "+" pré-preenchendo sem forçar.
+   * Passa sempre pelo formulário completo (`onChange` normal), nunca grava
+   * sozinha.
+   */
+  async function applyPhotoSuggestion(photo: RondaPhoto) {
+    const sugestao = await getFotoSugestao(photo);
+    if (!sugestao) return;
+
+    const current = findingRef.current;
+    const updates: Partial<RondaFinding> = {};
+    const sugerido: Partial<RondaFinding> = {};
+
+    if (!current.descricao && sugestao.descricao) {
+      updates.descricao = sugestao.descricao;
+      sugerido.descricao = sugestao.descricao;
+    }
+    if (!current.classificacao && sugestao.classificacao) {
+      updates.classificacao = sugestao.classificacao;
+      sugerido.classificacao = sugestao.classificacao;
+    }
+    if (!current.gravidade && sugestao.gravidade) {
+      updates.gravidade = sugestao.gravidade;
+      sugerido.gravidade = sugestao.gravidade;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      onChange({ ...current, ...updates });
+      onSuggestionApplied?.(current.id, sugerido);
+    }
+    setLowConfidenceFields(new Set(sugestao.camposIncertos));
   }
 
   function removePhoto(index: number) {
@@ -119,6 +175,11 @@ export function FindingCard({
     event.preventDefault();
     const nextOption = FINDING_CLASSIFICATIONS[nextIndex];
     onChange({ ...finding, classificacao: nextOption });
+    setLowConfidenceFields((current) => {
+      const next = new Set(current);
+      next.delete("classificacao");
+      return next;
+    });
     const group = event.currentTarget.closest('[role="radiogroup"]');
     const nextButton = group?.querySelectorAll('[role="radio"]')[nextIndex] as HTMLElement | undefined;
     nextButton?.focus();
@@ -215,8 +276,19 @@ export function FindingCard({
             {photoError && <p className="text-red-400">{photoError}</p>}
           </div>
 
-          <div className="flex flex-col gap-1.5 text-xs text-slate-600 dark:text-slate-400">
-            <span>Classificação</span>
+          <div
+            className={`flex flex-col gap-1.5 text-xs text-slate-600 dark:text-slate-400 ${
+              lowConfidenceFields.has("classificacao") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
+              Classificação
+              {lowConfidenceFields.has("classificacao") && (
+                <span className="rounded-full bg-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
+                  IA não teve certeza — revise
+                </span>
+              )}
+            </span>
             <div
               className="flex flex-wrap gap-2"
               role="radiogroup"
@@ -229,7 +301,14 @@ export function FindingCard({
                   role="radio"
                   aria-checked={finding.classificacao === option}
                   tabIndex={finding.classificacao === option || (!finding.classificacao && index === 0) ? 0 : -1}
-                  onClick={() => onChange({ ...finding, classificacao: option })}
+                  onClick={() => {
+                    onChange({ ...finding, classificacao: option });
+                    setLowConfidenceFields((current) => {
+                      const next = new Set(current);
+                      next.delete("classificacao");
+                      return next;
+                    });
+                  }}
                   onKeyDown={(event) => handleClassificationKeyDown(event, index)}
                   className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
                     finding.classificacao === option
@@ -243,11 +322,29 @@ export function FindingCard({
             </div>
           </div>
 
-          <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
-            Gravidade
+          <label
+            className={`flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400 ${
+              lowConfidenceFields.has("gravidade") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
+              Gravidade
+              {lowConfidenceFields.has("gravidade") && (
+                <span className="rounded-full bg-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
+                  IA não teve certeza — revise
+                </span>
+              )}
+            </span>
             <select
               value={finding.gravidade ?? ""}
-              onChange={(event) => onChange({ ...finding, gravidade: event.target.value as RondaFinding["gravidade"] })}
+              onChange={(event) => {
+                onChange({ ...finding, gravidade: event.target.value as RondaFinding["gravidade"] });
+                setLowConfidenceFields((current) => {
+                  const next = new Set(current);
+                  next.delete("gravidade");
+                  return next;
+                });
+              }}
               className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-sm text-slate-900 [color-scheme:light] dark:border-white/15 dark:text-slate-100 dark:[color-scheme:dark]"
             >
               <option value="" disabled>

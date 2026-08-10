@@ -10,14 +10,16 @@ import {
   pendingFindings,
   newFinding,
   duplicateFinding,
+  diffSuggestionFields,
   FLAG_LABELS,
   type RondaMetadata,
   type RondaFinding,
   type RondaClosing,
   type RondaFlag,
   type RondaSuggestion,
+  type SuggestionRecord,
 } from "@/lib/ronda/types";
-import { getFlags, getSugestoes, RondaSubmitError } from "@/lib/ronda/api-client";
+import { getFlags, getSugestoes, postCorrecaoSugestao, RondaSubmitError } from "@/lib/ronda/api-client";
 import { enqueueRonda } from "@/lib/ronda/db";
 import { useRondaQueue } from "@/lib/ronda/use-ronda-queue";
 import { QueueStatusBar } from "./queue-status-bar";
@@ -98,6 +100,8 @@ export function RondaWizard() {
   const [flagsError, setFlagsError] = useState<string | null>(null);
   const [checkedFlags, setCheckedFlags] = useState<Set<string>>(new Set());
   const [suggestionsByFlag, setSuggestionsByFlag] = useState<Record<string, RondaSuggestion[] | "loading">>({});
+  /** Sugestão original (flag ou foto/Fase 4) que pré-preencheu cada achado — Decisão 3, comparado contra o valor salvo na hora de concluir. */
+  const [suggestionOrigins, setSuggestionOrigins] = useState<Record<string, SuggestionRecord>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -124,6 +128,18 @@ export function RondaWizard() {
     setFindings((current) => [...current, finding]);
   }
 
+  /** Registra/funde o que uma sugestão pré-preencheu num achado — Decisão 3. Uma sugestão de foto que chega depois de uma de flag (ou vice-versa) funde os campos em vez de substituir o registro; `origem` mantém a primeira fonte que contribuiu. */
+  function recordSuggestion(findingId: string, origem: SuggestionRecord["origem"], sugerido: SuggestionRecord["sugerido"], flagId?: string) {
+    if (Object.keys(sugerido).length === 0) return;
+    setSuggestionOrigins((current) => {
+      const existing = current[findingId];
+      if (existing) {
+        return { ...current, [findingId]: { ...existing, sugerido: { ...existing.sugerido, ...sugerido } } };
+      }
+      return { ...current, [findingId]: { origem, flagId, sugerido } };
+    });
+  }
+
   function toggleFlag(flag: RondaFlag) {
     setCheckedFlags((current) => {
       const next = new Set(current);
@@ -146,10 +162,28 @@ export function RondaWizard() {
 
   async function handleConclude() {
     if (!canConclude) return;
-    await enqueueRonda({ metadata, achados: findings, encerramento: closing });
+    const item = await enqueueRonda({ metadata, achados: findings, encerramento: closing });
     setSavedLocally(true);
     void syncNow(); // tenta enviar imediatamente se houver rede; se não, fica na fila e o evento 'online' cuida do resto.
     setStep("done");
+
+    // Decisão 3 (correção humana vira aprendizado) — best-effort, não
+    // bloqueia a conclusão nem depende da ronda já ter sincronizado com o
+    // servidor (`item.localId` identifica a ronda mesmo offline;
+    // `postCorrecaoSugestao` nunca lança, falha some em silêncio).
+    for (const finding of findings) {
+      const record = suggestionOrigins[finding.id];
+      if (!record) continue;
+      const camposCorrigidos = diffSuggestionFields(record, finding);
+      if (Object.keys(camposCorrigidos).length === 0) continue;
+      void postCorrecaoSugestao({
+        rondaId: item.localId,
+        achadoId: finding.id,
+        origem: record.origem,
+        flagId: record.flagId,
+        camposCorrigidos,
+      });
+    }
   }
 
   function startNewRonda() {
@@ -158,6 +192,7 @@ export function RondaWizard() {
     setClosing(emptyClosing());
     setCheckedFlags(new Set());
     setSuggestionsByFlag({});
+    setSuggestionOrigins({});
     setSavedLocally(false);
     setStep("A");
   }
@@ -248,7 +283,11 @@ export function RondaWizard() {
                   checked={checkedFlags.has(flag.nome)}
                   onToggle={() => toggleFlag(flag)}
                   suggestions={suggestionsByFlag[flag.nome]}
-                  onAddFromSuggestion={(suggestion) => addFinding(newFinding(flag.nome, { descricao: suggestion.descricao }))}
+                  onAddFromSuggestion={(suggestion) => {
+                    const finding = newFinding(flag.nome, { descricao: suggestion.descricao });
+                    addFinding(finding);
+                    recordSuggestion(finding.id, "flag", { descricao: suggestion.descricao }, flag.nome);
+                  }}
                   onAddManual={() => addFinding(newFinding(flag.nome))}
                 />
               ))}
@@ -270,6 +309,7 @@ export function RondaWizard() {
                     finding={finding}
                     onChange={updateFinding}
                     onDuplicate={(f) => addFinding(duplicateFinding(f))}
+                    onSuggestionApplied={(findingId, sugerido) => recordSuggestion(findingId, "foto", sugerido)}
                   />
                 ))}
               </div>
