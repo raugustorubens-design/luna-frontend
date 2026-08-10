@@ -1,5 +1,5 @@
 import { LUNA_GATEWAY_BASE_URL } from "@/lib/forge/api-client";
-import type { RondaSubmission, RondaPatch, RondaFlag, RondaSuggestion } from "./types";
+import type { RondaSubmission, RondaPatch, RondaFlag, RondaSuggestion, RondaPhoto, RondaFotoSugestao, SuggestionCorrectionPayload } from "./types";
 
 export interface RondaSubmitResult {
   rondaId: string;
@@ -67,6 +67,47 @@ export async function getSugestoes(flagId: string): Promise<RondaSuggestion[]> {
 
   const body = await response.json();
   return body.sugestoes as RondaSuggestion[];
+}
+
+/**
+ * `POST /convergia/ronda/foto-sugestao` (Decisão 2, segunda fonte de
+ * sugestão — Fase 4 do ADR-021 original) — sempre devolve `null` em vez de
+ * lançar quando o backend não conseguiu gerar sugestão (rede, rate limit,
+ * resposta malformada — falha silenciosa por decisão do Architect, mesma
+ * política do lado do servidor). Anexar foto nunca fica bloqueado
+ * esperando isto.
+ */
+export async function getFotoSugestao(photo: RondaPhoto): Promise<RondaFotoSugestao | null> {
+  try {
+    const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/convergia/ronda/foto-sugestao`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(photo),
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return (body.sugestao as RondaFotoSugestao | null) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `POST /convergia/ronda/correcao-sugestao` (Decisão 3, correção humana
+ * vira aprendizado) — best-effort puro, chamado depois que a ronda já foi
+ * salva/enfileirada com sucesso: nunca lança, uma falha aqui não deve
+ * incomodar o usuário nem reverter o envio da ronda, que já aconteceu.
+ */
+export async function postCorrecaoSugestao(payload: SuggestionCorrectionPayload): Promise<void> {
+  try {
+    await fetch(`${LUNA_GATEWAY_BASE_URL}/convergia/ronda/correcao-sugestao`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    // best-effort — ver nota acima
+  }
 }
 
 /** Ronda completa, como devolvida por `GET /convergia/ronda/:id` (usada pela tela de edição — a mesma UI de achados do wizard precisa do objeto inteiro, não só o resumo de `RondaSubmitResult`). */

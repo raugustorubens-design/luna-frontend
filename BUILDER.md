@@ -1152,3 +1152,102 @@ pedido nem decidido nesta rodada.
 - Mecanismo de "revisado, não se aplica" pra sugestão não convertida —
   pendência ainda não confirmada pelo Architect, fora do que foi pedido
   resolver aqui.
+
+---
+
+## 2026-08-10 — Fase 4 como fonte de sugestão (foto) + correção alimenta o Hipocampo
+
+**Contexto:** implementa as Decisões 2-3 da revisão de arquitetura do lado
+do cliente, depois da Parte 1 de verificação obrigatória (chamada real
+contra produção, ver `BUILDER.md` de `luna-core`: `GROQ_API_KEY` válida,
+`qwen/qwen3.6-27b` como modelo real, formato aceito, achado do "modo
+thinking" e da cota apertada — 8000 TPM compartilhada, perto da saturação
+nos testes).
+
+### O que foi entregue
+
+1. **`lib/ronda/types.ts`** — `RondaFotoSugestao` (descricao +
+   classificacao/gravidade opcionais + `camposIncertos`),
+   `SuggestionRecord`/`SuggestionOrigin`/`SuggestionCorrectionPayload`, e
+   `diffSuggestionFields()` — compara o que foi sugerido com o que o
+   humano salvou, só os campos que mudaram entram no delta.
+2. **`lib/ronda/api-client.ts`** — `getFotoSugestao()` (nunca lança,
+   `null` em qualquer falha — mesma política do lado do servidor) e
+   `postCorrecaoSugestao()` (best-effort puro, erros engolidos).
+3. **`finding-card.tsx`** — ao anexar foto, dispara
+   `applyPhotoSuggestion()` em paralelo ao upload (não bloqueia): só
+   preenche `descricao`/`classificacao`/`gravidade` se ainda estiverem
+   vazios (nunca sobrescreve o que o humano já escreveu), sempre pelo
+   `onChange` normal — nenhuma gravação automática. Campos em
+   `camposIncertos` ganham destaque visual (borda âmbar + selo "IA não
+   teve certeza — revise"), sem bloquear o preenchimento; o destaque some
+   assim que o humano interage com aquele campo (clique na classificação,
+   seleção de gravidade). Novo prop `onSuggestionApplied` reporta pro
+   chamador quais campos a sugestão de fato preencheu, pra Parte 3.
+   **Detalhe técnico real, não óbvio:** a leitura de foto é assíncrona e
+   pode terminar depois de vários re-renders — um `ref` sincronizado a
+   cada render garante que o merge da sugestão parte do valor mais
+   recente do achado, não de um instantâneo desatualizado de quando o
+   upload começou (evitaria sobrescrever uma edição feita enquanto a
+   sugestão ainda carregava).
+4. **`ronda-wizard.tsx`** — `suggestionOrigins` (estado local, por
+   achado): grava o que uma sugestão de flag (Rodada 2) ou de foto (esta
+   rodada) pré-preencheu. Na conclusão, compara cada achado com sua
+   sugestão original via `diffSuggestionFields()` e dispara
+   `postCorrecaoSugestao()` (fire-and-forget) só pros achados com delta
+   real. `rondaId` usado é o `localId` da fila offline (`enqueueRonda`) —
+   a ronda pode ainda não ter sincronizado com o servidor no momento da
+   captura da correção; simplificação documentada, não um id de servidor
+   real nesse caso.
+
+### Verificação
+
+1. `npm run typecheck` / `npm run build` — limpos.
+2. `npm test` — 37 testes (3 novos cobrindo `diffSuggestionFields`,
+   incluindo o caso "sugestão e valor salvo idênticos → delta vazio" e
+   "campo nunca sugerido não entra no delta mesmo se preenchido depois").
+3. `npm run test:constitution` — limpo.
+4. **Ponta a ponta real contra produção, direto (sem UI)**, pelos
+   endpoints que `luna-core` expõe — ver `BUILDER.md` de lá para o
+   registro completo (payload real de sugestão com foto vermelha sólida,
+   `camposIncertos` correto, correção persistida em `memoria_luna` real,
+   confirmada e depois removida).
+5. **UI real, via Playwright, contra o backend mockado na camada de rede
+   do navegador com os payloads reais capturados no passo 4** (decisão
+   deliberada: não repetir a chamada real à Groq só pra exercitar a UI —
+   a cota de produção já estava apertada, confirmado na Parte 1; o que
+   estava em risco aqui era a lógica do componente React, não o
+   round-trip com a Groq, que já foi provado real em `luna-core`):
+   - Achado avulso criado, foto sintética anexada → `descricao` da
+     `textarea` pré-preenchida com o texto exato da sugestão mockada.
+   - Os dois selos "IA não teve certeza — revise" (classificação e
+     gravidade) apareceram, exatamente os dois campos que a sugestão
+     real havia marcado incertos.
+   - Corrigiu a descrição manualmente e selecionou classificação/
+     gravidade → os dois selos de baixa confiança desapareceram
+     (interação limpa o destaque).
+   - Concluiu a ronda → **payload de `POST /convergia/ronda/
+     correcao-sugestao` interceptado e inspecionado**: continha só
+     `descricao` no delta (`sugerido` = texto da IA, `salvo` = texto do
+     humano) — `classificacao`/`gravidade` corretamente ausentes do
+     delta, porque nunca tinham sido sugeridas de verdade (a IA não
+     preencheu, só marcou incerto; o humano preencheu do zero, não
+     "corrigiu" nada que existia).
+   - Script de Playwright viveu fora do repositório (scratch da sessão),
+     mesma convenção já usada antes neste arquivo.
+
+### O que NÃO foi feito
+
+- Retry/backoff — mesma decisão do Architect registrada em `luna-core`:
+  falha silenciosa, sem retry.
+- Correção capturada na tela de edição (`ronda-editor.tsx`) — a sugestão
+  de foto funciona lá também (mesmo `FindingCard`, mesmo componente), mas
+  `suggestionOrigins`/captura de correção (Parte 3) só existe no wizard
+  de criação; a edição não tem o contexto de "o que foi sugerido
+  originalmente" pra um achado já salvo antes desta sessão. Não pedido
+  explicitamente pra cobrir a edição — registrado como lacuna real, não
+  escondida.
+- `rondaId` real de servidor na correção — usa o `localId` da fila
+  offline quando a ronda ainda não sincronizou; ver nota acima.
+- UI pra revisar as fotos originais — já registrado como fora de escopo
+  na entrada anterior, continua fora aqui.

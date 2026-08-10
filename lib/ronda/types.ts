@@ -106,6 +106,52 @@ export interface RondaSuggestion {
   descricao: string;
 }
 
+/**
+ * Sugestão gerada a partir de uma foto anexada (Fase 4 do ADR-021 original,
+ * segunda fonte de sugestão — `POST /convergia/ronda/foto-sugestao`).
+ * `camposIncertos` é o critério real de baixa confiança (não um número de
+ * confiança que o modelo não devolve de verdade): campos que o modelo
+ * respondeu "incerto" ou fora do enum esperado, destacados no formulário
+ * pra revisão humana sem bloquear o preenchimento.
+ */
+export interface RondaFotoSugestao {
+  descricao: string;
+  classificacao?: FindingClassification;
+  gravidade?: FindingSeverity;
+  camposIncertos: Array<"classificacao" | "gravidade">;
+}
+
+/** Origem de uma sugestão que pré-preencheu um achado — rastreado só no cliente, pra Parte 3 (correção humana vira aprendizado) computar o delta na hora de salvar. */
+export type SuggestionOrigin = "flag" | "foto";
+
+export interface SuggestionRecord {
+  origem: SuggestionOrigin;
+  flagId?: string;
+  /** Só os campos que a sugestão de fato preencheu — comparados contra o valor salvo na hora de concluir a ronda. */
+  sugerido: Partial<Pick<RondaFinding, "descricao" | "classificacao" | "gravidade" | "departamento">>;
+}
+
+/** Corpo de `POST /convergia/ronda/correcao-sugestao` (Decisão 3) — computado no cliente, que já tem os dois lados (sugerido e salvo). */
+export interface SuggestionCorrectionPayload {
+  rondaId: string;
+  achadoId: string;
+  origem: SuggestionOrigin;
+  flagId?: string;
+  camposCorrigidos: Record<string, { sugerido: unknown; salvo: unknown }>;
+}
+
+/** Compara o que foi sugerido com o que o humano de fato salvou — só os campos que mudaram entram no delta (Decisão 3: "campos diferentes do que foi sugerido"). */
+export function diffSuggestionFields(record: SuggestionRecord, saved: RondaFinding): SuggestionCorrectionPayload["camposCorrigidos"] {
+  const camposCorrigidos: SuggestionCorrectionPayload["camposCorrigidos"] = {};
+  for (const [campo, sugerido] of Object.entries(record.sugerido)) {
+    const salvo = saved[campo as keyof RondaFinding];
+    if (salvo !== sugerido) {
+      camposCorrigidos[campo] = { sugerido, salvo };
+    }
+  }
+  return camposCorrigidos;
+}
+
 export interface RondaClosing {
   observacoesGerais?: string;
   incluirGraficoResumo: boolean;
