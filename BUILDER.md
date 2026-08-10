@@ -1037,3 +1037,118 @@ parados ao final.
   para referência: **CONV-013** (ADR-021 Fase 1) — esta entrega é
   extensão dele, não item novo.
 - Merge, "Ready for review" — branch segue draft, aguardando revisão.
+
+---
+
+## 2026-08-10 — Achado dinâmico: Etapa B por flags, foto original preservada localmente
+
+**Contexto:** implementa as Decisões 1-3 da revisão de arquitetura
+(`Luna-context.md`, `GENESIS/RESEARCH/
+revisao-arquitetura-achado-dinamico-flags-foto.md`) do lado do cliente —
+espelha os contratos novos de `luna-core` (mesma sessão, ver `BUILDER.md`
+de lá: `id`/`flagId` no lugar de `categoria`, catálogo de flags, endpoint
+de sugestão) e implementa a resposta do Architect à pendência de foto
+original. Muda o wizard já em produção (Fase 1/CONV-013 + extensão de
+edição) — Etapa B inteira redesenhada.
+
+### O que foi entregue
+
+1. **`lib/ronda/types.ts`** — `RondaFinding` troca `categoria` por
+   `id`/`flagId`; `RISK_CATEGORY_LABELS` renomeado `FLAG_LABELS` (inclui
+   `passivo_trabalhista`, que não tinha rótulo antes por não existir no
+   código); `emptyFindings()` volta lista vazia (achado nasce do "+", não
+   de slot fixo); novo `newFinding()`/`duplicateFinding()`;
+   `pendingCategories` renomeado `pendingFindings`. Novos tipos
+   `RondaFlag`/`RondaSuggestion`.
+2. **`lib/ronda/api-client.ts`** — `getFlags()`/`getSugestoes(flagId)`,
+   consumindo os dois endpoints novos de `luna-core`.
+3. **`components/ronda/finding-card.tsx`** — título vem de
+   `FLAG_LABELS[finding.flagId]` (ou "Achado manual"), não mais
+   `categoria` fixa; novo botão "+ Duplicar" (Decisão 3, refinamento 3),
+   visível só em achado já `identificado`; upload de foto agora também
+   preserva o arquivo original (sem compressão) via
+   `saveOriginalPhoto()`, em paralelo à versão comprimida que já ia pra
+   `fotos[]`/fila.
+4. **`components/ronda/ronda-wizard.tsx`** — Etapa B reescrita: catálogo
+   de flags carregado de `GET /convergia/ronda/flags` no mount; cada flag
+   é um checkbox (não radio, múltiplos marcáveis); marcar um flag de risco
+   busca sugestões reais e mostra como botões "+ [texto do controle]";
+   `passivo_trabalhista` (sem `bibliotecaRiscoId`) mostra só o "+" manual,
+   sem tentar buscar sugestão. Lista de achados abaixo, um `FindingCard`
+   por achado, endereçado por `id`. "+Achado avulso" pro terceiro tipo de
+   "+" (manual, sem flag nenhum).
+5. **`components/ronda/ronda-editor.tsx`** — endereça achado por `id`
+   (`updateFinding`), ganha o mesmo "+Duplicar" do wizard.
+6. **`lib/ronda/db.ts`** — novo object store `originalPhotos`
+   (`DB_VERSION` 1→2, migração via `onupgradeneeded`, não destrutiva —
+   store novo, `queue` intocado). `saveOriginalPhoto(achadoId, index,
+   file)` grava o arquivo como veio (sem `lib/ronda/photo.ts`'s
+   `compressPhoto`), associado ao achado por `achadoId`. Nunca faz parte
+   do payload de `enqueueRonda`/`submitRonda` — só local,
+   `getOriginalPhotosForFinding()` existe pra leitura (usado na
+   verificação abaixo, não consumido por UI nesta rodada).
+
+**Sobre a preocupação de cota do IndexedDB (pedida explicitamente na
+instrução):** o teste de verificação abaixo usou uma foto sintética
+minúscula (68 bytes), não representativa de uma foto real de celular
+(tipicamente alguns MB). Não foi possível medir o impacto real de cota
+neste ambiente (sem câmera real/arquivo de campo grande disponível) — é
+uma lacuna real de verificação, registrada aqui em vez de assumida como
+resolvida. Risco genuíno pra sessão futura avaliar: duas fotos por achado
+(campo comprimida + original) em vez de uma só quase dobra o uso de
+`IndexedDB` por ronda: pode valer a pena expirar/limpar originais já
+enviados com sucesso, ou colocar um teto de retenção, mas isso não foi
+pedido nem decidido nesta rodada.
+
+### Verificação
+
+1. `npm run typecheck` — limpo.
+2. `npm test` — 34 testes (13 novos/reescritos em `types.test.ts` cobrindo
+   `newFinding`/`duplicateFinding`/`pendingFindings`), todos passam.
+   `db.test.ts` não precisou de mudança (só testa `summarizeQueue`, função
+   pura).
+3. `npm run test:constitution` — limpo (68 arquivos escaneados).
+4. `npm run build` — sucesso (warnings pré-existentes de Edge Runtime em
+   `jose`/`next-auth`, não relacionados a esta mudança).
+5. **Ponta a ponta real, via Playwright, contra um `luna-core` local
+   (mesmo backend desta sessão, rodando o código da branch irmã) e o
+   Guardian real de produção** (rota nova, não deployada ainda — mesmo
+   padrão já usado antes neste arquivo pra rotas novas):
+   - Preencheu Etapa A, avançou.
+   - Marcou o flag "Trabalho em Altura" → 3 sugestões reais carregadas
+     (batendo com o confirmado em `luna-core`) → clicou na primeira → 1
+     achado criado, pré-preenchido com a descrição da sugestão.
+   - "+ Duplicar" no achado → 2 achados (mesmo `flagId`, campos
+     copiados, `id` novo).
+   - "+ Achado avulso (sem flag)" → 3 achados (`flagId: null`).
+   - Upload de uma foto sintética no primeiro achado → **inspecionado
+     `indexedDB` diretamente** (não assumido): store `originalPhotos`
+     existe, 1 registro com `achadoId` batendo com o `id` do achado,
+     `mimeType`/`sizeBytes` corretos — a foto original persiste local,
+     como desenhado.
+   - Preencheu os campos obrigatórios dos 3 achados, avançou pra Etapa C,
+     clicou "Concluir" → salvo local (fila) → sincronizado com sucesso
+     (sem erro 422/rede) → **confirmado via consulta direta ao banco de
+     produção**: ronda real com os 3 achados persistidos exatamente como
+     preenchidos (`jsonb_array_length(achados) = 3`).
+   - **Registro de teste removido do banco real depois**
+     (`delete from convergia_rondas where ronda_id = ...`, confirmado
+     pela query retornando a linha apagada).
+   - Scripts de Playwright viveram fora do repositório (diretório de
+     scratch da sessão) — não fazem parte do diff, mesma convenção já
+     usada antes neste arquivo.
+
+### O que NÃO foi feito
+
+- UI pra revisar/consultar as fotos originais preservadas
+  (`getOriginalPhotosForFinding` existe, sem consumidor de UI) — não
+  pedido nesta rodada, só a preservação em si.
+- Envio da foto original pro servidor/quarentena — só local, como
+  desenhado (`CONV-012` fora de escopo).
+- Medição real de impacto de cota do IndexedDB com foto de tamanho real
+  de celular — lacuna de verificação registrada acima, não resolvida.
+- Leitura de imagem por IA (Fase 4) — fora de escopo, mesmo já registrado
+  em `luna-core`.
+- Mecanismo de "revisado, não se aplica" pra sugestão não convertida —
+  pendência ainda não confirmada pelo Architect, fora do que foi pedido
+  resolver aqui.

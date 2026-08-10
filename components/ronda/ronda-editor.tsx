@@ -3,16 +3,17 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getRonda, patchRonda, RondaSubmitError, type RondaDetail } from "@/lib/ronda/api-client";
-import type { RondaFinding } from "@/lib/ronda/types";
+import { duplicateFinding, type RondaFinding } from "@/lib/ronda/types";
 import { FindingCard } from "./finding-card";
 
 /**
  * Edição de uma ronda já enviada (extensão da Fase 1, CONV-013 —
  * `PATCH /convergia/ronda/:id`). Reaproveita `FindingCard`, o mesmo
  * componente de achado do wizard original — nenhuma UI nova de achado só
- * para edição. Só permite adicionar/remover/editar achado e a observação
- * geral; excluir a ronda inteira não faz parte desta tela (decisão
- * destrutiva separada, fora de escopo aqui).
+ * para edição, achado endereçado por `id` (achado dinâmico, não mais por
+ * `categoria` fixa). Só permite adicionar/editar/duplicar achado e a
+ * observação geral; excluir a ronda inteira não faz parte desta tela
+ * (decisão destrutiva separada, fora de escopo aqui).
  */
 export function RondaEditor({ rondaId }: { rondaId: string }) {
   const router = useRouter();
@@ -43,7 +44,7 @@ export function RondaEditor({ rondaId }: { rondaId: string }) {
   }, [rondaId]);
 
   function updateFinding(next: RondaFinding) {
-    setFindings((current) => current.map((f) => (f.categoria === next.categoria ? next : f)));
+    setFindings((current) => current.map((f) => (f.id === next.id ? next : f)));
   }
 
   async function handleSave() {
@@ -94,7 +95,12 @@ export function RondaEditor({ rondaId }: { rondaId: string }) {
       <main className="flex-1 overflow-y-auto px-4 py-4">
         <div className="flex flex-col gap-3">
           {findings.map((finding) => (
-            <FindingCard key={finding.categoria} finding={finding} onChange={updateFinding} />
+            <FindingCard
+              key={finding.id}
+              finding={finding}
+              onChange={updateFinding}
+              onDuplicate={(f) => setFindings((current) => [...current, duplicateFinding(f)])}
+            />
           ))}
 
           <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">

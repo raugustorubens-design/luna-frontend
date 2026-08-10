@@ -1,5 +1,5 @@
 import { LUNA_GATEWAY_BASE_URL } from "@/lib/forge/api-client";
-import type { RondaSubmission, RondaPatch } from "./types";
+import type { RondaSubmission, RondaPatch, RondaFlag, RondaSuggestion } from "./types";
 
 export interface RondaSubmitResult {
   rondaId: string;
@@ -34,6 +34,39 @@ export async function submitRonda(submission: RondaSubmission): Promise<RondaSub
 
   const body = await response.json();
   return body.ronda as RondaSubmitResult;
+}
+
+/** `GET /convergia/ronda/flags` — catálogo de flags (Decisão 2 da revisão de arquitetura), ordenado pra exibição na Etapa B. */
+export async function getFlags(): Promise<RondaFlag[]> {
+  const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/convergia/ronda/flags`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new RondaSubmitError(body?.error ?? `Falha ao carregar o catálogo de flags (HTTP ${response.status}).`, body?.issues);
+  }
+
+  const body = await response.json();
+  return body.flags as RondaFlag[];
+}
+
+/**
+ * `GET /convergia/ronda/sugestoes?flagId=` — sugestões reais pra um flag,
+ * consulta determinística a `controle_risco` (nenhuma IA/chat envolvida).
+ * Lista vazia é uma resposta válida (flag sem `bibliotecaRiscoId`, como
+ * `passivo_trabalhista`, ou sem controle cadastrado) — o chamador mostra só
+ * o "+" manual nesse caso.
+ */
+export async function getSugestoes(flagId: string): Promise<RondaSuggestion[]> {
+  const url = new URL(`${LUNA_GATEWAY_BASE_URL}/convergia/ronda/sugestoes`);
+  url.searchParams.set("flagId", flagId);
+
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new RondaSubmitError(body?.error ?? `Falha ao carregar sugestões (HTTP ${response.status}).`, body?.issues);
+  }
+
+  const body = await response.json();
+  return body.sugestoes as RondaSuggestion[];
 }
 
 /** Ronda completa, como devolvida por `GET /convergia/ronda/:id` (usada pela tela de edição — a mesma UI de achados do wizard precisa do objeto inteiro, não só o resumo de `RondaSubmitResult`). */
