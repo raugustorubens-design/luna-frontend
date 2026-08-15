@@ -1391,3 +1391,125 @@ conferência final disso fica com o Architect no aparelho real.
   Playwright, ponta a ponta; não foi adicionado teste unitário em
   `lib/ronda/__tests__/` porque a função vive no componente, não em
   `lib/` (que é o que a suíte atual cobre).
+
+---
+
+## 2026-08-15 — Fix urgente: `POST /convergia/ronda` 422 repetido em produção — fila offline reenviando pra sempre payloads de antes da migração pro achado dinâmico
+
+### Achado, com logs reais
+
+Logs HTTP de produção (Railway, `luna-core`) mostravam `POST /convergia/ronda`
+retornando `422` repetidamente entre 2026-08-10 e 2026-08-15 (um único `201`
+em toda a janela), sempre em rajadas rápidas (2–23ms de duração, várias
+chamadas a poucos ms/segundos de distância) — padrão incompatível com um TST
+preenchendo o wizard manualmente, compatível com uma fila reenviando vários
+itens em sequência. A rajada mais recente (2026-08-15T08:55:06, dois `422`
+~200ms um do outro) coincidiu exatamente com o print do Architect mostrando
+"2 falharam" na fila local do wizard.
+
+### Reprodução real (não assumida)
+
+1. Wizard real (`/ronda`) preenchido via Playwright do jeito que um TST
+   preencheria — Etapa A completa, um achado via sugestão de flag + foto, um
+   achado manual + foto — rodado duas vezes contra `luna-core` local
+   apontando pra produção real (`GUARDIAN_BASE_URL` de produção): **`201`
+   nas duas vezes**, sem reproduzir um 422 no fluxo atual do wizard. Terceira
+   variante testada direto por `curl` (achado `estado: "inexistente"` +
+   achado manual `identificado`, mesma shape atual): também `201`. **Não há
+   bug vivo no wizard atual** nos caminhos testados.
+2. Payload sintético no formato **anterior** à migração pro achado dinâmico
+   (`categoria` em vez de `id`/`flagId` — arquitetura de
+   `Luna-context.md`/`GENESIS/RESEARCH/revisao-arquitetura-achado-dinamico-flags-foto.md`)
+   enviado direto pro backend local (apontando pra produção real):
+   ```
+   POST /api/convergia/ronda
+   {"metadata": {...}, "achados": [{"categoria": "trabalho_em_altura", "estado": "identificado", ...}, {"categoria": "eletricidade", "estado": "inexistente"}], "encerramento": {...}}
+   ```
+   Resposta real, capturada por completo (não só o status):
+   ```
+   HTTP 422
+   {"error":"Envio de ronda reprovado na validação (2 problema(s)).","issues":[{"path":"achados.0.id","message":"Required"},{"path":"achados.1.id","message":"Required"}]}
+   ```
+   Reproduz exatamente o padrão dos logs de produção: rejeição rápida,
+   estrutural, `id` ausente em cada achado.
+
+### Causa raiz
+
+`lib/ronda/queue.ts` (fila offline, `trySyncPendingRondas`) retentava
+**qualquer** item `"pending"`/`"error"` em todo evento `online` e toda
+reabertura do app, sem nenhuma forma de diferenciar uma falha de rede
+(transiente, deve retentar) de uma rejeição estrutural do servidor
+(permanente — o mesmo payload nunca vai passar). Itens enfileirados no
+dispositivo do Architect **antes** da migração pro achado dinâmico (quando o
+wizard ainda mandava `categoria`) ficaram presos: cada reconexão/reabertura
+disparava um novo `422`, indefinidamente, contra o backend já migrado (que
+corretamente exige `id`, ver `validation.ts` em `luna-core` — decisão
+mantida, não alterada aqui: o contrato atual é o certo, o payload antigo é
+que está desatualizado).
+
+### O que mudou
+
+1. **`api-client.ts`** — `RondaSubmitError` ganhou `status?: number` (status
+   HTTP da resposta), pra quem trata o erro conseguir diferenciar 422
+   (rejeição definitiva) de outras falhas.
+2. **`db.ts`** — novo status de fila `"invalid"` (distinto de `"error"`):
+   sinaliza um item que o servidor rejeitou por validação, não vai se
+   resolver reenviando. `QueueCounts` ganhou `invalid`; nova
+   `deleteQueueItem()` pra remover um item da fila local.
+3. **`queue.ts`** — `isPermanentRejection(error)` (pura, testável): `true`
+   só quando o erro é `RondaSubmitError` com `status === 422`. Em
+   `trySyncPendingRondas`, uma rejeição permanente move o item pra
+   `"invalid"` (nunca mais retentado automaticamente, mensagem clara pedindo
+   pra refazer a ronda) em vez de `"error"` (que continua sendo retentado
+   pra sempre — comportamento correto pra falha de rede real). Nova
+   `discardInvalidQueueItem()` pra remover um item `"invalid"` depois que o
+   usuário já refez a ronda manualmente.
+4. **`use-ronda-queue.ts`** — expõe `discardInvalid(localId)`.
+5. **`queue-status-bar.tsx`** / **`ronda-wizard.tsx`** — a barra de status
+   agora mostra "N não pôde(ram) ser reenviada(s)" separado de "falhou(aram)",
+   com um aviso explicando que é formato desatualizado (não vai se resolver
+   sozinho) e um botão "Descartar" por item, listando título/data/mensagem
+   de erro real de cada um.
+
+### Sobre os registros que já falharam nestes dias
+
+Confirmado via `GET /convergia/ronda` que **nenhum dos envios que geraram
+422 foi persistido** (422 é rejeitado antes de qualquer escrita) — não há
+dado real perdido no servidor, só as tentativas de reenvio na fila local do
+dispositivo do Architect. Esses itens antigos, presos em IndexedDB no
+formato pré-migração, **não são alcançáveis remotamente** — só o próprio
+Architect pode limpá-los, no próprio aparelho. Com o fix, na próxima
+reabertura do app eles vão parar de gerar 422 repetido: a fila vai
+classificá-los como `"invalid"` (rejeição real do servidor, mesmo texto
+`"achados.N.id": "Required"` capturado acima) em vez de continuar tentando
+pra sempre, e a barra de status vai mostrar o aviso + botão "Descartar" —
+não há migração automática de formato (a shape antiga usava `categoria`
+fixa, que não existe mais no catálogo de flags dinâmico; não dá pra mapear
+com segurança sem intervenção humana). Ação recomendada pro Architect:
+abrir o wizard, ver o aviso laranja na barra de status, refazer manualmente
+cada ronda antiga listada ali e descartar o item.
+
+### Verificação
+
+1. `npm run typecheck` — limpo.
+2. `npm test` — 39 testes (2 novos: `isPermanentRejection` distingue 422 de
+   erro de rede/5xx; `summarizeQueue` cobre o novo status `"invalid"`).
+3. **Ponta a ponta real contra produção**, via Playwright no wizard real
+   (`/ronda`), Etapa A completa + achado via sugestão de flag (com foto) +
+   achado manual (com foto) — `201` confirmado, `GET /convergia/ronda/:id`
+   confirmou os dois achados persistidos com os campos corretos
+   (`id`/`flagId`, `estado: "identificado"`, fotos, etc.). Registro de teste
+   removido depois (`delete from convergia_rondas where ronda_id = ...`,
+   confirmado pela query retornando a linha apagada) — junto com os dois
+   registros do mesmo teste rodado antes do fix (mesma rota, resultado
+   idêntico, sem motivo pra manter duplicado).
+
+### O que NÃO foi feito
+
+- Migração automática do formato antigo (`categoria`) pro novo
+  (`id`/`flagId`) — não é segura sem intervenção humana (ver acima); a
+  solução aqui é parar o retry infinito + dar visibilidade/ação clara pro
+  usuário, não inventar um mapeamento.
+- Mudança no backend (`luna-core`) — a validação atual (exigir `id`) está
+  correta pro contrato atual; decidido não "fazer o 422 sumir" mudando o
+  que o servidor aceita.

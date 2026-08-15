@@ -89,7 +89,7 @@ function FlagSection({
 }
 
 export function RondaWizard() {
-  const { counts, syncNow } = useRondaQueue();
+  const { counts, syncNow, items: queueItems, discardInvalid } = useRondaQueue();
   const [step, setStep] = useState<Step>("A");
   const [metadata, setMetadata] = useState<RondaMetadata>(emptyMetadata);
   const [findings, setFindings] = useState<RondaFinding[]>(emptyFindings);
@@ -215,7 +215,12 @@ export function RondaWizard() {
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <QueueStatusBar counts={counts} onSyncNow={() => void syncNow()} />
+      <QueueStatusBar
+        counts={counts}
+        onSyncNow={() => void syncNow()}
+        invalidItems={queueItems.filter((item) => item.status === "invalid")}
+        onDiscardInvalid={(localId) => void discardInvalid(localId)}
+      />
 
       <header className="flex items-start justify-between gap-2 border-b border-black/10 px-4 py-3 dark:border-white/10">
         <div>

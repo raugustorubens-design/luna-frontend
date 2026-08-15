@@ -28,7 +28,17 @@ const STORE = "queue";
  */
 const ORIGINAL_PHOTOS_STORE = "originalPhotos";
 
-export type QueueStatus = "pending" | "syncing" | "synced" | "error";
+/**
+ * "invalid" (distinto de "error"): o servidor rejeitou o envio por
+ * validação estrutural/semântica (HTTP 422) — não uma falha de rede. Um
+ * item nesse estado nunca vai ter sucesso só de tentar de novo (o payload
+ * em si está desatualizado ou incompleto), então `trySyncPendingRondas` não
+ * o reenvia automaticamente; fica só como sinal pro usuário refazer a ronda
+ * e descartar o item (achado real: itens antigos, de antes da migração pra
+ * achado dinâmico, presos na fila local e reenviados pra sempre contra o
+ * schema atual — ver BUILDER.md).
+ */
+export type QueueStatus = "pending" | "syncing" | "synced" | "error" | "invalid";
 
 export interface QueueItem {
   localId: string;
@@ -134,6 +144,7 @@ export interface QueueCounts {
   syncing: number;
   synced: number;
   error: number;
+  invalid: number;
 }
 
 export function summarizeQueue(items: QueueItem[]): QueueCounts {
@@ -142,7 +153,13 @@ export function summarizeQueue(items: QueueItem[]): QueueCounts {
     syncing: items.filter((i) => i.status === "syncing").length,
     synced: items.filter((i) => i.status === "synced").length,
     error: items.filter((i) => i.status === "error").length,
+    invalid: items.filter((i) => i.status === "invalid").length,
   };
+}
+
+/** Remove um item da fila local — usado pra descartar itens "invalid" que o usuário já refez manualmente (não há reenvio automático possível pra eles). */
+export async function deleteQueueItem(localId: string): Promise<void> {
+  await runTransaction(STORE, "readwrite", (store) => store.delete(localId));
 }
 
 function fileToBase64(file: File): Promise<string> {
