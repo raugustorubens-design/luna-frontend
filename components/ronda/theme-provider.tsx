@@ -62,9 +62,37 @@ export function RondaThemeProvider({ children }: { children: React.ReactNode }) 
       <div id="ronda-theme-root" ref={rootRef} className="dark">
         {/* eslint-disable-next-line @next/next/no-sync-scripts */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        {/*
+          Fundo escuro em degradê vertical, quase preto (#05060B) no topo até
+          o Midnight (#1E2761) embaixo. Três decisões por trás disto:
+
+          - **Vertical, escuro no topo:** o cabeçalho (título, alternador de
+            tema, botão de voltar) e os selos de estado vivem no topo — a
+            faixa mais escura fica exatamente onde a densidade de texto é
+            maior. No iOS a barra de status é `black-translucent` (ver
+            `app/ronda/layout.tsx`), ou seja, ela se sobrepõe ao topo da
+            página: quase preto ali é o que deixa os ícones do sistema
+            legíveis.
+          - **`#05060B`, não `#000000`:** mantém o mesmo viés azul de
+            `#1E2761`, então a interpolação fica dentro de uma família de
+            matiz só — um quase preto neutro passaria por um meio-tom
+            acinzentado no caminho até o Midnight.
+          - **Sem `bg-fixed`:** as três telas de /ronda (`ronda-wizard`,
+            `ronda-editor`, `ronda-list`) são `min-h-dvh` com o scroll
+            interno no `<main>`, não no documento — este elemento tem
+            sempre a altura da viewport, então o degradê já se repete
+            igual em toda tela sem depender de `background-attachment`
+            (que é justamente o que costuma falhar no Safari do iOS, o
+            alvo principal deste PWA).
+
+          `dark:bg-[#1E2761]` continua abaixo do degradê como cor sólida de
+          fallback (`background-color` e `background-image` são propriedades
+          distintas, as duas se aplicam) — se o degradê não pintar, o fundo
+          cai no Midnight de antes, nunca no fundo claro.
+        */}
         <div
           id="ronda-root"
-          className="min-h-dvh bg-[#F4F6FB] text-[#1E2761] [color-scheme:light] dark:bg-[#1E2761] dark:text-[#F4F6FB] dark:[color-scheme:dark]"
+          className="min-h-dvh bg-[#F4F6FB] text-[#1E2761] [color-scheme:light] dark:bg-[#1E2761] dark:bg-[linear-gradient(180deg,#05060B_0%,#1E2761_100%)] dark:text-[#F4F6FB] dark:[color-scheme:dark]"
         >
           {children}
         </div>

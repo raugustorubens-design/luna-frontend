@@ -128,6 +128,22 @@ export function RondaWizard() {
     setFindings((current) => [...current, finding]);
   }
 
+  function removeFinding(findingId: string) {
+    setFindings((current) => current.filter((f) => f.id !== findingId));
+    // Descarta junto o registro de sugestão do achado removido, mesmo
+    // princípio do `setEstado` em `FindingCard` (não guardar dado de um
+    // achado que a pessoa decidiu não manter). O payload de correção em si
+    // já estaria a salvo sem isto — `handleConclude` percorre `findings`,
+    // não `suggestionOrigins`, então um achado fora da lista nunca é
+    // enviado; a limpeza evita o registro órfão em memória.
+    setSuggestionOrigins((current) => {
+      if (!current[findingId]) return current;
+      const next = { ...current };
+      delete next[findingId];
+      return next;
+    });
+  }
+
   /** Registra/funde o que uma sugestão pré-preencheu num achado — Decisão 3. Uma sugestão de foto que chega depois de uma de flag (ou vice-versa) funde os campos em vez de substituir o registro; `origem` mantém a primeira fonte que contribuiu. */
   function recordSuggestion(findingId: string, origem: SuggestionRecord["origem"], sugerido: SuggestionRecord["sugerido"], flagId?: string) {
     if (Object.keys(sugerido).length === 0) return;
@@ -309,6 +325,7 @@ export function RondaWizard() {
                     finding={finding}
                     onChange={updateFinding}
                     onDuplicate={(f) => addFinding(duplicateFinding(f))}
+                    onRemove={removeFinding}
                     onSuggestionApplied={(findingId, sugerido) => recordSuggestion(findingId, "foto", sugerido)}
                   />
                 ))}

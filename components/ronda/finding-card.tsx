@@ -52,12 +52,15 @@ export function FindingCard({
   finding,
   onChange,
   onDuplicate,
+  onRemove,
   onSuggestionApplied,
 }: {
   finding: RondaFinding;
   onChange: (next: RondaFinding) => void;
   /** "+" num achado já preenchido, pra duplicar (Decisão 3, refinamento 3) — omitido esconde o botão (ex. card ainda sem campos preenchidos). */
   onDuplicate?: (finding: RondaFinding) => void;
+  /** Remove o achado da lista do chamador. Diferente de `onDuplicate`, vale pra **qualquer** achado, em qualquer estado — não só os "identificados" nem só os duplicados. Omitido esconde o botão. */
+  onRemove?: (findingId: string) => void;
   /** Reporta pro chamador quais campos uma sugestão de foto (Fase 4) de fato preencheu, pra Parte 3 (correção humana vira aprendizado) comparar sugerido-vs-salvo na hora de concluir. */
   onSuggestionApplied?: (findingId: string, sugerido: Partial<RondaFinding>) => void;
 }) {
@@ -206,6 +209,29 @@ export function FindingCard({
               + Duplicar
             </button>
           )}
+          {/*
+            Sem a condição de `estado === "identificado"` que o "+ Duplicar"
+            tem logo acima: remover vale pra qualquer achado, inclusive o que
+            ainda está "não avaliado"/"inexistente" ou vazio.
+
+            `confirm()` nativo, não modal customizado — mesma disciplina de
+            "não apagar sem intenção clara" do resto do sistema, e o
+            suficiente aqui: some da lista sem lugar nenhum pra desfazer.
+          */}
+          {onRemove && (
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm(`Remover o achado "${title}"? Não é possível desfazer.`)) {
+                  onRemove(finding.id);
+                }
+              }}
+              aria-label={`Remover achado — ${title}`}
+              className="rounded border border-black/15 px-2 py-1 text-[10px] leading-none text-slate-600 hover:border-red-500 hover:text-red-600 dark:border-white/15 dark:text-slate-400 dark:hover:border-red-400 dark:hover:text-red-300"
+            >
+              ×
+            </button>
+          )}
         </div>
       </div>
 
@@ -335,6 +361,22 @@ export function FindingCard({
                 </span>
               )}
             </span>
+            {/*
+              `color-scheme` invertido de propósito em relação ao tema da
+              página (escuro na página clara, claro na página escura): o menu
+              suspenso nativo herda o `color-scheme` do `<select>`, então
+              inverter aqui é o que faz a lista aberta contrastar com o fundo
+              em vez de se confundir com ele.
+
+              O campo fechado continua acompanhando o tema da página porque a
+              aparência dele vem das classes explícitas ao lado
+              (`bg-transparent`, `text-slate-900 dark:text-slate-100`,
+              `border-black/15 dark:border-white/15`), que ganham do
+              `color-scheme`. O único resquício que o `color-scheme` ainda
+              controla no campo fechado é a setinha desenhada pelo próprio
+              navegador — ver a entrada no BUILDER.md para o que a verificação
+              visual mostrou sobre ela.
+            */}
             <select
               value={finding.gravidade ?? ""}
               onChange={(event) => {
@@ -345,7 +387,7 @@ export function FindingCard({
                   return next;
                 });
               }}
-              className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-sm text-slate-900 [color-scheme:light] dark:border-white/15 dark:text-slate-100 dark:[color-scheme:dark]"
+              className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-sm text-slate-900 [color-scheme:dark] dark:border-white/15 dark:text-slate-100 dark:[color-scheme:light]"
             >
               <option value="" disabled>
                 selecione…
