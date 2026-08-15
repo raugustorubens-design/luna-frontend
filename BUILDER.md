@@ -1251,3 +1251,143 @@ nos testes).
   offline quando a ronda ainda não sincronizou; ver nota acima.
 - UI pra revisar as fotos originais — já registrado como fora de escopo
   na entrada anterior, continua fora aqui.
+
+---
+
+## 2026-08-15 — /ronda: fundo em degradê, menu de Gravidade invertido, "×" pra remover achado
+
+**Contexto:** três ajustes pequenos e independentes pedidos pelo
+Architect, todos em `/ronda`. Nenhum depende dos outros.
+
+### 1. Fundo escuro em degradê (quase preto → Midnight)
+
+`components/ronda/theme-provider.tsx`: `dark:bg-[#1E2761]` (sólido) ganha
+`dark:bg-[linear-gradient(180deg,#05060B_0%,#1E2761_100%)]` por cima. A
+cor sólida **fica** como fallback — `background-color` e
+`background-image` são propriedades distintas, então se o degradê não
+pintar o fundo cai no Midnight de antes, nunca no fundo claro.
+
+Escolhas, com a justificativa pedida:
+
+- **Vertical (`180deg`), escuro no topo.** O cabeçalho (título,
+  alternador de tema, botão de voltar), a barra de fila e os selos de
+  estado ficam no topo — a faixa mais escura cai onde a densidade de
+  texto é maior. Reforço real: `app/ronda/layout.tsx` declara
+  `statusBarStyle: "black-translucent"`, ou seja, no iOS a barra de
+  status do sistema se sobrepõe ao topo da página; quase preto ali é o
+  que mantém os ícones do sistema legíveis.
+- **`#05060B`, não `#000000`.** Mantém o mesmo viés azul do `#1E2761`,
+  então a interpolação fica dentro de uma família de matiz só. Um quase
+  preto neutro passaria por um meio-tom acinzentado no caminho.
+- **Sem `background-attachment: fixed`.** Cogitado pra garantir que o
+  degradê apareça igual em toda tela, e **descartado depois de medir**:
+  as três telas (`ronda-wizard`, `ronda-editor`, `ronda-list`) são
+  `min-h-dvh` com o scroll interno no `<main>`, não no documento. Medido
+  via Playwright em todas as telas: `#ronda-root` tem altura 844 com
+  viewport 844 e `document.scrollHeight <= innerHeight` — o elemento é
+  sempre do tamanho da viewport, então o degradê já se repete igual
+  sozinho. Evita de graça o `background-attachment: fixed`, que é
+  justamente o que costuma falhar no Safari do iOS, alvo principal deste
+  PWA.
+
+**Modo claro não mudou** — confirmado por medição, não por inspeção
+visual: `backgroundImage: "none"`, `backgroundColor: rgb(244, 246, 251)`
+(`#F4F6FB`, idêntico ao de antes) em todas as telas claras.
+
+### 2. `color-scheme` do menu de Gravidade invertido
+
+`components/ronda/finding-card.tsx`: o `<select>` de Gravidade passa de
+`[color-scheme:light] dark:[color-scheme:dark]` para
+`[color-scheme:dark] dark:[color-scheme:light]`. Invertido, não
+removido. É o **único `<select>` de todo o /ronda** (conferido) — nenhum
+outro campo muda de comportamento.
+
+**Nota de reconciliação, importante:** isto inverte, para este campo, a
+decisão da entrada de 2026-08-06 deste mesmo arquivo ("`<select>`
+nativos ilegíveis no popup"), que adicionou `color-scheme` justamente
+pra o popup **acompanhar** a página. As duas decisões têm a mesma
+motivação (legibilidade do menu aberto) e conclusões opostas: aquela
+queria o popup se fundindo ao tema, esta quer ele contrastando com o
+fundo. A instrução do Architect aqui foi explícita ("inverter, não
+remover"), então a nova prevalece — registrado pra não parecer regressão
+acidental de quem ler as duas entradas.
+
+### 3. Botão "×" pra remover achado
+
+`FindingCard` ganha `onRemove?: (findingId: string) => void` e um "×" no
+cabeçalho, ao lado do "+ Duplicar". Diferente do "+ Duplicar", **não**
+tem a condição `estado === "identificado"` — vale pra qualquer achado,
+em qualquer estado, como pedido. `window.confirm()` nativo antes de
+remover.
+
+Ligado em `ronda-wizard.tsx` via `removeFinding`, que também descarta o
+registro em `suggestionOrigins` do achado removido — mesmo princípio do
+`setEstado` no próprio `FindingCard` (não guardar dado de um achado que
+a pessoa decidiu não manter). O payload de correção já estaria a salvo
+sem isso, porque `handleConclude` percorre `findings`, não
+`suggestionOrigins`; a limpeza evita o registro órfão em memória.
+
+### Verificado nesta sessão
+
+- `npm run typecheck` — limpo.
+- `npm run test:constitution` — passou, 68 arquivos varridos.
+- `npm test` — 37/37 testes passando.
+- **Playwright, com o backend stubado via `page.route()`** (catálogo de
+  flags e sugestões; o `POST /convergia/ronda` interceptado pra
+  inspecionar o payload). Viewport 390×844, script fora do repositório,
+  mesma convenção das entradas anteriores:
+  - **Degradê:** `linear-gradient(rgb(5, 6, 11) 0%, rgb(30, 39, 97)
+    100%)` computado no `#ronda-root` em wizard (Etapa A e Etapa B) e
+    histórico, no tema escuro; `none` nas mesmas telas no tema claro.
+    Altura do elemento igual à da viewport nas três, documento sem
+    scroll — que é a medição que dispensou o `bg-fixed`.
+  - **Gravidade:** página `dark` → `<select>` com `color-scheme: light`;
+    página `light` → `<select>` com `color-scheme: dark`. Invertido nos
+    dois sentidos, como pedido.
+  - **Campo fechado não regrediu:** cor do texto continua acompanhando o
+    tema da página (`rgb(241, 245, 249)` no escuro, `rgb(15, 23, 42)` no
+    claro), fundo transparente nos dois. A setinha desenhada pelo
+    navegador continua visível nos dois temas — no Chromium ela deriva
+    da propriedade `color`, que as classes explícitas controlam, e não
+    do `color-scheme`; era o risco real dessa inversão e ele não se
+    materializou. Recorte do campo capturado nos dois temas.
+  - **Remoção:** dois achados criados → "×" com `confirm()` **cancelado**
+    → continuam dois; "×" **aceito** → sobra um. Texto do diálogo
+    conferido (`Remover o achado "Achado manual"? Não é possível
+    desfazer.`). Ronda concluída até a tela final, e o **payload do
+    `POST /convergia/ronda` interceptado**: `achados` traz só o achado
+    mantido — o removido não é enviado.
+
+**Não capturável:** o popup nativo do `<select>` aberto. Ele é desenhado
+fora da árvore da página e abri-lo trava o `page.screenshot` do
+Playwright. O que dá pra afirmar com evidência é o `color-scheme`
+efetivo do elemento, que é a propriedade da qual o popup herda a cor —
+a aparência do popup aberto em si não foi vista nesta sessão, e a
+conferência final disso fica com o Architect no aparelho real.
+
+### O que NÃO foi feito
+
+- **"×" no `ronda-editor.tsx` — deliberadamente ausente, e é o achado
+  mais importante desta sessão.** O editor de fato renderiza
+  `FindingCard` (a instrução pedia pra confirmar antes de assumir que só
+  o wizard precisava), mas o `PATCH /convergia/ronda/:id` faz **upsert
+  por `id`** (`luna-core`, `src/convergia/ronda/ronda-store.ts`): `id`
+  conhecido substitui aquele achado, `id` novo entra na lista, e não
+  existe forma de o patch dizer "este achado saiu". Um "×" ali removeria
+  o card, mostraria "Alterações salvas." e o achado voltaria no próximo
+  carregamento — falha silenciosa numa ação destrutiva. Deixado de fora,
+  com comentário no lugar onde a prop entraria explicando por quê.
+  Habilitar depende de o contrato ganhar semântica de remoção em
+  `luna-core` primeiro, o que é decisão do Architect.
+- **Limpeza da foto original em IndexedDB ao remover um achado.**
+  `saveOriginalPhoto` grava a foto não comprimida por `achadoId`
+  (`lib/ronda/db.ts`) e não existe função de remoção — remover um achado
+  com foto deixa o original órfão no IndexedDB do aparelho. Não é
+  regressão desta mudança (o mesmo já acontece hoje ao voltar um achado
+  pra "não avaliado"), mas o "×" torna o caso mais fácil de atingir.
+  Fora do escopo de "três ajustes pequenos": exigiria API nova em
+  `db.ts` mais teste. Registrado como lacuna real.
+- Teste automatizado do `removeFinding`. A lógica verificada foi via
+  Playwright, ponta a ponta; não foi adicionado teste unitário em
+  `lib/ronda/__tests__/` porque a função vive no componente, não em
+  `lib/` (que é o que a suíte atual cobre).

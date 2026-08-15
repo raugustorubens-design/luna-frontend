@@ -94,6 +94,18 @@ export function RondaEditor({ rondaId }: { rondaId: string }) {
 
       <main className="flex-1 overflow-y-auto px-4 py-4">
         <div className="flex flex-col gap-3">
+          {/*
+            `onRemove` (o "×" do `FindingCard`) está deliberadamente ausente
+            aqui — não é esquecimento, e passar a prop não faria funcionar.
+            `PATCH /convergia/ronda/:id` faz **upsert por `id`** (`luna-core`,
+            `src/convergia/ronda/ronda-store.ts`): `id` conhecido substitui
+            aquele achado, `id` novo entra na lista — não existe forma de o
+            patch dizer "este achado saiu". Um "×" nesta tela removeria o
+            card, salvaria com sucesso e o achado voltaria no próximo
+            carregamento: falha silenciosa. Habilitar remoção aqui depende de
+            o contrato ganhar semântica de remoção em `luna-core` primeiro,
+            o que é decisão do Architect, não ajuste de frontend.
+          */}
           {findings.map((finding) => (
             <FindingCard
               key={finding.id}
