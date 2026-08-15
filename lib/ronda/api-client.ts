@@ -12,10 +12,13 @@ export interface RondaSubmitResult {
 
 export class RondaSubmitError extends Error {
   readonly issues?: { path: string; message: string }[];
-  constructor(message: string, issues?: { path: string; message: string }[]) {
+  /** Status HTTP da resposta que gerou o erro — usado pela fila (queue.ts) pra distinguir rejeição definitiva do servidor (422, validação) de falha transiente (rede, 5xx), que continuam elegíveis a reenvio automático. */
+  readonly status?: number;
+  constructor(message: string, issues?: { path: string; message: string }[], status?: number) {
     super(message);
     this.name = "RondaSubmitError";
     this.issues = issues;
+    this.status = status;
   }
 }
 
@@ -29,7 +32,7 @@ export async function submitRonda(submission: RondaSubmission): Promise<RondaSub
 
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new RondaSubmitError(body?.error ?? `Falha ao enviar ronda (HTTP ${response.status}).`, body?.issues);
+    throw new RondaSubmitError(body?.error ?? `Falha ao enviar ronda (HTTP ${response.status}).`, body?.issues, response.status);
   }
 
   const body = await response.json();

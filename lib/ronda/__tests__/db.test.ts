@@ -13,11 +13,11 @@ function item(status: QueueItem["status"]): QueueItem {
 }
 
 test("summarizeQueue counts each status independently", () => {
-  const items = [item("pending"), item("pending"), item("syncing"), item("synced"), item("synced"), item("synced"), item("error")];
+  const items = [item("pending"), item("pending"), item("syncing"), item("synced"), item("synced"), item("synced"), item("error"), item("invalid")];
   const counts = summarizeQueue(items);
-  assert.deepEqual(counts, { pending: 2, syncing: 1, synced: 3, error: 1 });
+  assert.deepEqual(counts, { pending: 2, syncing: 1, synced: 3, error: 1, invalid: 1 });
 });
 
 test("summarizeQueue on an empty queue is all zeros", () => {
-  assert.deepEqual(summarizeQueue([]), { pending: 0, syncing: 0, synced: 0, error: 0 });
+  assert.deepEqual(summarizeQueue([]), { pending: 0, syncing: 0, synced: 0, error: 0, invalid: 0 });
 });
