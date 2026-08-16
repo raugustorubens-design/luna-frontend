@@ -20,7 +20,7 @@ import {
   type SuggestionRecord,
 } from "@/lib/ronda/types";
 import { getFlags, getSugestoes, postCorrecaoSugestao, RondaSubmitError } from "@/lib/ronda/api-client";
-import { enqueueRonda } from "@/lib/ronda/db";
+import { enqueueRonda, loadDraft, saveDraft, clearDraft } from "@/lib/ronda/db";
 import { useRondaQueue } from "@/lib/ronda/use-ronda-queue";
 import { QueueStatusBar } from "./queue-status-bar";
 import { FindingCard } from "./finding-card";
@@ -103,6 +103,39 @@ export function RondaWizard() {
   /** Sugestão original (flag ou foto/Fase 4) que pré-preencheu cada achado — Decisão 3, comparado contra o valor salvo na hora de concluir. */
   const [suggestionOrigins, setSuggestionOrigins] = useState<Record<string, SuggestionRecord>>({});
 
+  /** `false` até a tentativa de recuperar o rascunho terminar — trava o autosave pra ele não gravar o estado inicial vazio por cima de um rascunho bom. */
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  /** Houve rascunho recuperado nesta montagem — vira um aviso na tela, pra pessoa saber por que os campos já vieram preenchidos. */
+  const [draftRecovered, setDraftRecovered] = useState(false);
+
+  // Recupera a ronda em andamento (ver `saveDraft` em `lib/ronda/db.ts`).
+  // Roda antes de qualquer digitação, na montagem — se a aba caiu no meio
+  // da ronda, a pessoa volta exatamente na etapa onde estava, com os
+  // achados e as fotos.
+  useEffect(() => {
+    let cancelled = false;
+    void loadDraft()
+      .then((draft) => {
+        if (cancelled || !draft) return;
+        setMetadata(draft.metadata);
+        setFindings(draft.findings);
+        setClosing(draft.closing);
+        setCheckedFlags(new Set(draft.checkedFlags));
+        setSuggestionOrigins(draft.suggestionOrigins);
+        // `done` nunca deveria estar gravado (a conclusão apaga o rascunho),
+        // mas um rascunho antigo/corrompido não pode devolver a pessoa a uma
+        // tela de sucesso que não aconteceu.
+        if (draft.step === "A" || draft.step === "B" || draft.step === "C") setStep(draft.step);
+        setDraftRecovered(true);
+      })
+      .finally(() => {
+        if (!cancelled) setDraftLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     getFlags()
@@ -119,6 +152,45 @@ export function RondaWizard() {
 
   const pending = useMemo(() => pendingFindings(findings), [findings]);
   const canConclude = pending.length === 0;
+
+  /**
+   * `data` fica de fora de propósito: `emptyMetadata()` já nasce com a data
+   * de hoje, então ela não distingue "ronda começada" de "tela recém-aberta"
+   * — considerá-la faria toda visita gravar um rascunho vazio e, na visita
+   * seguinte, anunciar uma recuperação que não recuperou nada.
+   */
+  const hasDraftContent = useMemo(
+    () =>
+      Boolean(metadata.titulo.trim() || metadata.local.trim() || metadata.responsavel.trim() || metadata.turno.trim()) ||
+      findings.length > 0 ||
+      checkedFlags.size > 0 ||
+      Boolean(closing.observacoesGerais?.trim()),
+    [metadata, findings, checkedFlags, closing],
+  );
+
+  // Autosave do rascunho. Debounce de 600ms porque a dependência inclui
+  // `findings` — que muda a cada tecla digitada num campo de achado — e
+  // gravar fotos em base64 no IndexedDB a cada tecla travaria a digitação
+  // num celular de campo. Sem rascunho ainda em branco: se a pessoa
+  // esvaziou tudo, o registro é apagado em vez de gravado vazio.
+  useEffect(() => {
+    if (!draftLoaded || step === "done") return;
+    const timer = setTimeout(() => {
+      if (!hasDraftContent) {
+        void clearDraft();
+        return;
+      }
+      void saveDraft({
+        step,
+        metadata,
+        findings,
+        closing,
+        checkedFlags: Array.from(checkedFlags),
+        suggestionOrigins,
+      });
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [draftLoaded, hasDraftContent, step, metadata, findings, closing, checkedFlags, suggestionOrigins]);
 
   function updateFinding(next: RondaFinding) {
     setFindings((current) => current.map((f) => (f.id === next.id ? next : f)));
@@ -179,6 +251,11 @@ export function RondaWizard() {
   async function handleConclude() {
     if (!canConclude) return;
     const item = await enqueueRonda({ metadata, achados: findings, encerramento: closing });
+    // A ronda virou item de fila — o rascunho já cumpriu o papel dele e
+    // some, pra próxima abertura do app não oferecer "recuperar" uma ronda
+    // que já foi concluída.
+    void clearDraft();
+    setDraftRecovered(false);
     setSavedLocally(true);
     void syncNow(); // tenta enviar imediatamente se houver rede; se não, fica na fila e o evento 'online' cuida do resto.
     setStep("done");
@@ -210,32 +287,55 @@ export function RondaWizard() {
     setSuggestionsByFlag({});
     setSuggestionOrigins({});
     setSavedLocally(false);
+    setDraftRecovered(false);
+    void clearDraft();
     setStep("A");
   }
 
   return (
-    <div className="flex min-h-dvh flex-col">
-      <QueueStatusBar
-        counts={counts}
-        onSyncNow={() => void syncNow()}
-        invalidItems={queueItems.filter((item) => item.status === "invalid")}
-        onDiscardInvalid={(localId) => void discardInvalid(localId)}
-      />
+    <div className="ronda-shell flex flex-col overflow-hidden">
+      <div className="ronda-chrome-top shrink-0">
+        <QueueStatusBar
+          counts={counts}
+          onSyncNow={() => void syncNow()}
+          invalidItems={queueItems.filter((item) => item.status === "invalid")}
+          onDiscardInvalid={(localId) => void discardInvalid(localId)}
+        />
 
-      <header className="flex items-start justify-between gap-2 border-b border-black/10 px-4 py-3 dark:border-white/10">
-        <div>
-          <h1 className="text-base font-semibold text-slate-900 dark:text-slate-100">LUNA Safety Walk</h1>
-          <p className="text-xs text-slate-600 dark:text-slate-400">
-            {step === "A" && "Etapa 1 de 3 — Dados do LUNA Safety Walk"}
-            {step === "B" && "Etapa 2 de 3 — Flags de risco e achados"}
-            {step === "C" && "Etapa 3 de 3 — Encerramento"}
-            {step === "done" && "LUNA Safety Walk registrado"}
-          </p>
-        </div>
-        <ThemeToggle />
-      </header>
+        <header className="flex items-start justify-between gap-2 border-b border-black/10 px-4 py-3 dark:border-white/10">
+          <div>
+            <h1 className="text-base font-semibold text-slate-900 dark:text-slate-100">LUNA Safety Walk</h1>
+            <p className="text-xs text-slate-600 dark:text-slate-400">
+              {step === "A" && "Etapa 1 de 3 — Dados do LUNA Safety Walk"}
+              {step === "B" && "Etapa 2 de 3 — Flags de risco e achados"}
+              {step === "C" && "Etapa 3 de 3 — Encerramento"}
+              {step === "done" && "LUNA Safety Walk registrado"}
+            </p>
+          </div>
+          <ThemeToggle />
+        </header>
+      </div>
 
-      <main className="flex-1 overflow-y-auto px-4 py-4">
+      {/* `min-h-0` é o que transforma o `flex-1` numa altura de verdade:
+          sem ele, o `min-height: auto` que o flex dá de padrão ao filho
+          deixa a `<main>` crescer junto com o conteúdo, e o
+          `overflow-y-auto` nunca chega a valer — quem rolava era o
+          documento inteiro, levando cabeçalho e rodapé embora. */}
+      <main className="ronda-scroll-pad min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
+        {draftRecovered && step !== "done" && (
+          <div className="mb-3 flex items-start justify-between gap-3 rounded border border-cyan-500/40 bg-cyan-500/10 p-2.5 text-xs text-cyan-800 dark:text-cyan-300">
+            <p>
+              Ronda em andamento recuperada deste aparelho — nada do que você já tinha preenchido se perdeu.
+              <button type="button" onClick={startNewRonda} className="ml-2 underline">
+                Começar do zero
+              </button>
+            </p>
+            <button type="button" onClick={() => setDraftRecovered(false)} className="shrink-0 underline" aria-label="Dispensar aviso">
+              ok
+            </button>
+          </div>
+        )}
+
         {step === "A" && (
           <div className="flex flex-col gap-3">
             <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
@@ -384,7 +484,7 @@ export function RondaWizard() {
       </main>
 
       {step !== "done" && (
-        <footer className="flex items-center justify-between gap-2 border-t border-black/10 px-4 py-3 dark:border-white/10">
+        <footer className="ronda-chrome-bottom flex shrink-0 items-center justify-between gap-2 border-t border-black/10 px-4 py-3 dark:border-white/10">
           <button
             type="button"
             disabled={step === "A"}

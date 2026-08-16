@@ -10,11 +10,24 @@
  * a superfície usada aqui é pequena o bastante (dois stores, chave simples)
  * para não justificar uma dependência nova só para isto.
  */
-import type { RondaSubmission } from "./types";
+import type { RondaSubmission, RondaMetadata, RondaFinding, RondaClosing, SuggestionRecord } from "./types";
 
 const DB_NAME = "luna-ronda";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE = "queue";
+/**
+ * Rascunho da ronda em andamento (achado de campo, 16/08/2026): até aqui o
+ * wizard mantinha tudo só em memória React e só gravava algo em IndexedDB
+ * na conclusão — qualquer recarga da aba apagava a ronda inteira. E recarga
+ * não é hipótese remota em campo: o iOS descarta a aba de um PWA sob
+ * pressão de memória com facilidade, e abrir a câmera é justamente o
+ * momento de maior pressão. O rascunho é gravado continuamente aqui, com
+ * foto e tudo (por isso IndexedDB e não localStorage: as fotos são base64 e
+ * estouram a cota de ~5MB), e apagado na conclusão. Uma ronda em andamento
+ * por vez — chave fixa `current`.
+ */
+const DRAFT_STORE = "draft";
+const DRAFT_KEY = "current";
 /**
  * Foto original de campo, preservada localmente (Decisão 4 da revisão de
  * arquitetura — `Luna-context.md`, `GENESIS/RESEARCH/
@@ -74,6 +87,11 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(ORIGINAL_PHOTOS_STORE)) {
         const originalPhotos = db.createObjectStore(ORIGINAL_PHOTOS_STORE, { keyPath: "id" });
         originalPhotos.createIndex("achadoId", "achadoId", { unique: false });
+      }
+      // Sem `keyPath` — o rascunho é um registro único, endereçado pela
+      // chave externa fixa `DRAFT_KEY`, não por um campo de dentro dele.
+      if (!db.objectStoreNames.contains(DRAFT_STORE)) {
+        db.createObjectStore(DRAFT_STORE);
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -198,4 +216,56 @@ export async function saveOriginalPhoto(achadoId: string, index: number, file: F
 export async function getOriginalPhotosForFinding(achadoId: string): Promise<OriginalPhotoRecord[]> {
   const all = await runTransaction<OriginalPhotoRecord[]>(ORIGINAL_PHOTOS_STORE, "readonly", (store) => store.getAll());
   return all.filter((record) => record.achadoId === achadoId).sort((a, b) => a.index - b.index);
+}
+
+/**
+ * Estado do wizard suficiente pra remontar a tela exatamente onde a pessoa
+ * parou. `checkedFlags` vira array porque `Set` não sobrevive ao
+ * structured clone do IndexedDB de forma útil pro resto do código; as
+ * sugestões carregadas por flag (`suggestionsByFlag`) ficam de fora de
+ * propósito — são cache de rede, rebuscáveis, não dado do usuário.
+ */
+export interface RondaDraft {
+  step: string;
+  metadata: RondaMetadata;
+  findings: RondaFinding[];
+  closing: RondaClosing;
+  checkedFlags: string[];
+  suggestionOrigins: Record<string, SuggestionRecord>;
+  updatedAt: string;
+}
+
+/**
+ * Grava o rascunho da ronda em andamento. Nunca lança: perder o rascunho é
+ * ruim, mas derrubar o preenchimento em campo por causa de uma cota cheia
+ * de IndexedDB seria pior — a falha é registrada e o wizard segue com o
+ * estado em memória, que é o mesmo comportamento que existia antes.
+ */
+export async function saveDraft(draft: Omit<RondaDraft, "updatedAt">): Promise<void> {
+  const record: RondaDraft = { ...draft, updatedAt: new Date().toISOString() };
+  try {
+    await runTransaction(DRAFT_STORE, "readwrite", (store) => store.put(record, DRAFT_KEY));
+  } catch (error) {
+    console.warn("[ronda] falha ao salvar o rascunho local", error);
+  }
+}
+
+/** Lê o rascunho da ronda em andamento, ou `null` se não houver (ou se a leitura falhar — nunca lança, mesmo motivo de `saveDraft`). */
+export async function loadDraft(): Promise<RondaDraft | null> {
+  try {
+    const record = await runTransaction<RondaDraft | undefined>(DRAFT_STORE, "readonly", (store) => store.get(DRAFT_KEY));
+    return record ?? null;
+  } catch (error) {
+    console.warn("[ronda] falha ao ler o rascunho local", error);
+    return null;
+  }
+}
+
+/** Apaga o rascunho — chamado quando a ronda é concluída (já virou item de fila) ou descartada explicitamente pelo usuário. */
+export async function clearDraft(): Promise<void> {
+  try {
+    await runTransaction(DRAFT_STORE, "readwrite", (store) => store.delete(DRAFT_KEY));
+  } catch (error) {
+    console.warn("[ronda] falha ao apagar o rascunho local", error);
+  }
 }

@@ -50,6 +50,95 @@ body {
   @apply bg-white/5 backdrop-blur-xl border border-white/10;
 }
 
+/* ---------------------------------------------------------------------------
+ * LUNA Safety Walk (/ronda) — regras da superfície de campo.
+ *
+ * Escopadas por `.ronda-locked` no `<html>` (ver `components/ronda/
+ * viewport-lock.tsx`) porque o Forge e o Modo Usuário dividem o mesmo
+ * `<body>` do layout raiz e não devem herdar nada disto.
+ *
+ * Achado de campo em 16/08/2026, durante uma ronda real: "o relatório está
+ * saindo da página ou subindo sozinho e eu tenho que reiniciar a todo
+ * momento".
+ * ------------------------------------------------------------------------ */
+
+/*
+ * Causa raiz do "sai da página / sobe sozinho". O iOS amplia a página
+ * sozinho sempre que o foco cai num campo com fonte menor que 16px — e os
+ * campos do wizard estavam todos em `text-sm` (14px). O zoom desloca a
+ * viewport, o cabeçalho e o rodapé saem do visível, e a rolagem passa a
+ * parecer que "subiu sozinha". 16px é o limiar exato do WebKit: em 16px o
+ * zoom simplesmente não dispara.
+ *
+ * Feito aqui, e não trocando `text-sm` por `text-base` campo a campo, para
+ * valer também pra todo campo novo que entrar no wizard depois — é uma
+ * regra da plataforma, não uma escolha de tipografia deste ou daquele
+ * formulário. O seletor `.ronda-locked input` (0,1,1) vence `.text-sm`
+ * (0,1,0) por especificidade, e a regra vem depois de `@tailwind
+ * utilities` na cascata.
+ */
+.ronda-locked input,
+.ronda-locked select,
+.ronda-locked textarea {
+  font-size: 16px;
+}
+
+/*
+ * Nenhuma rolagem no documento — quem rola é só a `<main>` do wizard. Antes
+ * o `<body>` também rolava (o shell usava `min-h-dvh`, altura *mínima*, que
+ * não limita o filho `flex-1 overflow-y-auto` a altura nenhuma): dois
+ * contêineres roláveis empilhados, cabeçalho e rodapé fugindo da tela e o
+ * dedo pegando um ou outro sem previsibilidade.
+ */
+.ronda-locked,
+.ronda-locked body {
+  height: 100%;
+  overflow: hidden;
+  /* Mata o "puxa e volta" elástico do iOS, que na prática levava a página
+     inteira junto quando a rolagem da `<main>` chegava ao fim. */
+  overscroll-behavior: none;
+}
+
+/* O degradê do Modo Usuário é caro de repintar a cada rolagem num celular
+   de campo, e some por baixo do shell opaco de qualquer jeito. */
+.ronda-locked body {
+  background-image: none;
+}
+
+/*
+ * Altura *fixa* da viewport, não mínima — é o que dá ao `<main>` interno um
+ * limite concreto pra rolar dentro dele.
+ *
+ * `svh` (small viewport height) e não `dvh`: `dvh` acompanha a barra de
+ * endereços do navegador aparecendo e sumindo, então o shell inteiro
+ * mudava de altura no meio da rolagem e a página dava um pulo — metade do
+ * "sobe sozinho" era isto. `svh` é a altura com a barra visível, e não
+ * muda nunca. `100vh` fica de fallback pra navegador sem suporte a `svh`.
+ */
+.ronda-shell {
+  height: 100vh;
+  height: 100svh;
+}
+
+/*
+ * Recortes da tela (notch, ilha dinâmica, risquinho do iPhone). O layout
+ * declara `viewportFit: "cover"` e `statusBarStyle: "black-translucent"`,
+ * ou seja, pede explicitamente pra desenhar por baixo da UI do sistema —
+ * sem estas margens, o cabeçalho ficava sob o relógio e os botões
+ * Voltar/Avançar sob o risquinho, intocáveis.
+ */
+.ronda-chrome-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.ronda-chrome-bottom {
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+}
+
+.ronda-scroll-pad {
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+}
+
 .scanline::before {
   content: "";
   position: absolute;
