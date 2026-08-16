@@ -4,7 +4,7 @@
  * o app, tenta reenviar o que estiver pendente." Nenhuma ação manual do
  * usuário além de reconectar.
  */
-import { listQueue, updateQueueItem, deleteQueueItem, type QueueItem } from "./db";
+import { listQueue, updateQueueItem, deleteQueueItem, discardRondaLocalCopies, type QueueItem } from "./db";
 import { submitRonda, RondaSubmitError } from "./api-client";
 
 let syncing = false;
@@ -76,6 +76,19 @@ export async function trySyncPendingRondas(onProgress?: (item: QueueItem) => voi
         const result = await submitRonda(item.submission);
         await updateQueueItem(item.localId, { status: "synced", syncedAt: new Date().toISOString(), serverRondaId: result.rondaId, lastError: undefined });
         onProgress?.({ ...item, status: "synced", serverRondaId: result.rondaId });
+        // Confirmada no servidor — as cópias locais (item da fila com as
+        // fotos comprimidas embutidas, e as originais dos achados) perdem a
+        // razão de existir e dão lugar a um resumo de ~1 KB. Antes desta
+        // linha nada apagava nada: medido em 16/08/2026, ~9,3 MB por foto
+        // ficavam no aparelho para sempre.
+        await discardRondaLocalCopies(item, {
+          rondaId: result.rondaId,
+          titulo: result.titulo,
+          data: result.data,
+          local: result.local,
+          achadosCount: result.achadosCount,
+          createdAt: result.createdAt,
+        });
       } catch (error) {
         const message = error instanceof RondaSubmitError ? error.message : error instanceof Error ? error.message : "Falha desconhecida ao enviar.";
         // Achado real em produção: itens enfileirados antes da migração pra

@@ -13,7 +13,7 @@
  * sem IndexedDB nem rede.
  */
 import type { RondaSubmitResult } from "./api-client";
-import type { QueueItem, QueueStatus } from "./db";
+import type { HistoryEntry, QueueItem, QueueStatus } from "./db";
 
 export type RondaListEntry =
   | {
@@ -65,16 +65,31 @@ export function countIdentified(item: QueueItem): number {
  *
  * `server === null` significa "não deu para falar com o servidor" (offline,
  * que é o caso comum em campo) — diferente de `[]`, que é "o servidor
- * respondeu e não há nada lá". A distinção importa: com o servidor fora, os
- * itens já sincronizados da fila local continuam listados, para a tela
- * nunca ficar vazia só porque não há rede. Com o servidor no ar, esses
- * mesmos itens são omitidos — o registro do servidor é a versão canônica e
- * mostrar os dois seria uma duplicata confusa.
+ * respondeu e não há nada lá". A distinção importa: com o servidor fora, a
+ * lista é montada a partir do cache local de resumos (`history`), para a
+ * tela nunca ficar vazia só porque não há rede. Com o servidor no ar, ele é
+ * a fonte canônica e o cache é ignorado.
+ *
+ * O cache existe porque a ronda confirmada deixou de ficar guardada inteira
+ * no aparelho (ver `discardRondaLocalCopies`) — sem ele, economizar espaço
+ * teria custado o histórico offline.
  */
-export function buildRondaList(server: RondaSubmitResult[] | null, queue: QueueItem[]): RondaListEntry[] {
+export function buildRondaList(server: RondaSubmitResult[] | null, queue: QueueItem[], history: HistoryEntry[] = []): RondaListEntry[] {
   const entries: RondaListEntry[] = [];
 
-  for (const ronda of server ?? []) {
+  const confirmed: HistoryEntry[] =
+    server !== null
+      ? server.map((ronda) => ({
+          rondaId: ronda.rondaId,
+          titulo: ronda.titulo,
+          data: ronda.data,
+          local: ronda.local,
+          achadosCount: ronda.achadosCount,
+          createdAt: ronda.createdAt,
+        }))
+      : history;
+
+  for (const ronda of confirmed) {
     entries.push({
       kind: "server",
       id: ronda.rondaId,
@@ -87,6 +102,10 @@ export function buildRondaList(server: RondaSubmitResult[] | null, queue: QueueI
   }
 
   for (const item of queue) {
+    // Item "synced" na fila só sobrevive se `discardRondaLocalCopies` falhou
+    // — o caminho normal apaga. Omitido quando o registro canônico já está
+    // na lista, pra não virar duplicata.
+    if (item.status === "synced" && confirmed.some((ronda) => ronda.rondaId === item.serverRondaId)) continue;
     if (item.status === "synced" && server !== null) continue;
     entries.push({
       kind: "queue",

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { listRondas, RondaSubmitError, type RondaSubmitResult } from "@/lib/ronda/api-client";
+import { cacheHistory } from "@/lib/ronda/db";
 import { buildRondaList, ENTRY_STATUS_LABEL, type RondaListEntry } from "@/lib/ronda/list-view";
 import { useRondaQueue } from "@/lib/ronda/use-ronda-queue";
 
@@ -34,7 +35,7 @@ function StatusTag({ entry }: { entry: RondaListEntry }) {
 }
 
 export function RondaList() {
-  const { items: queueItems, counts, syncNow } = useRondaQueue();
+  const { items: queueItems, history, counts, refresh, syncNow } = useRondaQueue();
   /** `null` = ainda carregando ou servidor inalcançável; `[]` = servidor respondeu vazio. `buildRondaList` trata os dois casos de forma diferente. */
   const [server, setServer] = useState<RondaSubmitResult[] | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -43,8 +44,13 @@ export function RondaList() {
   const loadServer = useCallback(async () => {
     setLoading(true);
     try {
-      setServer(await listRondas());
+      const rondas = await listRondas();
+      setServer(rondas);
       setServerError(null);
+      // Espelha o que o servidor devolveu no cache local — é o que mantém
+      // esta mesma tela útil da próxima vez que ela abrir sem rede.
+      await cacheHistory(rondas);
+      await refresh();
     } catch (err: unknown) {
       // Falha do servidor não esvazia mais a tela: os itens do aparelho
       // continuam listados abaixo do aviso. Em campo, sem rede, esta era
@@ -54,13 +60,13 @@ export function RondaList() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [refresh]);
 
   useEffect(() => {
     void loadServer();
   }, [loadServer]);
 
-  const entries = buildRondaList(server, queueItems);
+  const entries = buildRondaList(server, queueItems, history);
   const localCount = entries.filter((entry) => entry.kind === "queue").length;
 
   return (

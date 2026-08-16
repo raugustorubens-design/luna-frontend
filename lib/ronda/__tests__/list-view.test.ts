@@ -79,3 +79,34 @@ test("countIdentified conta só achado identificado, igual ao servidor", () => {
   item.submission.achados = [finding("identificado"), finding("identificado"), finding("nao_avaliado"), finding("inexistente")];
   assert.equal(countIdentified(item), 2);
 });
+
+/**
+ * Cache de histórico (16/08/2026): a ronda confirmada deixou de ficar
+ * guardada inteira no aparelho, então o que sustenta a lista sem rede
+ * passou a ser o resumo de ~1 KB por ronda — sem isso, economizar espaço
+ * teria custado o histórico offline.
+ */
+const historico = [{ rondaId: "ronda_hist", titulo: "Do cache", data: "2026-08-10", local: "UT", achadosCount: 3, createdAt: "2026-08-10T09:00:00.000Z" }];
+
+test("sem servidor, a lista é montada a partir do cache local", () => {
+  const entries = buildRondaList(null, [], historico);
+  assert.deepEqual(entries.map((e) => `${e.kind}:${e.id}`), ["server:ronda_hist"]);
+  assert.equal(entries[0].achadosCount, 3);
+});
+
+test("com servidor no ar, o cache é ignorado — o servidor é a fonte canônica", () => {
+  const entries = buildRondaList([serverRonda()], [], historico);
+  assert.deepEqual(entries.map((e) => e.id), ["ronda_1"]);
+});
+
+test("sem servidor, cache e fila local convivem na mesma lista", () => {
+  const entries = buildRondaList(null, [queued({ localId: "pendente", status: "pending" })], historico);
+  assert.deepEqual(entries.map((e) => `${e.kind}:${e.id}`), ["queue:pendente", "server:ronda_hist"]);
+});
+
+/** `discardRondaLocalCopies` normalmente apaga o item; se falhar, ele não pode virar duplicata do registro que já está listado. */
+test("item 'synced' que sobrou não duplica a ronda já confirmada", () => {
+  const sobra = queued({ localId: "sobra", status: "synced", serverRondaId: "ronda_hist" });
+  const entries = buildRondaList(null, [sobra], historico);
+  assert.deepEqual(entries.map((e) => `${e.kind}:${e.id}`), ["server:ronda_hist"]);
+});

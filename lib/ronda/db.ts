@@ -13,7 +13,7 @@
 import type { RondaSubmission, RondaMetadata, RondaFinding, RondaClosing, SuggestionRecord } from "./types";
 
 const DB_NAME = "luna-ronda";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const STORE = "queue";
 /**
  * Rascunho da ronda em andamento (achado de campo, 16/08/2026): até aqui o
@@ -33,13 +33,41 @@ const DRAFT_KEY = "current";
  * arquitetura — `Luna-context.md`, `GENESIS/RESEARCH/
  * revisao-arquitetura-achado-dinamico-flags-foto.md`): a versão comprimida
  * (1280px/0.7, `lib/ronda/photo.ts`) é a única coisa que entra em `fotos[]`
- * e é enviada pela fila; o arquivo original, maior/melhor qualidade, fica só
- * aqui, associado ao achado por `achadoId`, pra uma futura "versão de
- * apresentação" (Fase 2) poder trabalhar com qualidade melhor que o teto de
- * 1280px que a compressão de campo já impõe. Nada aqui é enviado ao
- * servidor nesta rodada — só preservado.
+ * e é enviada pela fila; o arquivo original fica aqui, associado ao achado
+ * por `achadoId`, pra uma futura "versão de apresentação" (Fase 2) poder
+ * trabalhar com qualidade melhor que o teto de 1280px da compressão de
+ * campo.
+ *
+ * Duas correções de 16/08/2026, depois de medir o custo real (relato de
+ * campo: "reduzir espaço no dispositivo"):
+ *
+ * 1. Guardado como `Blob`, não mais como string base64. IndexedDB aceita
+ *    `Blob` via structured clone; base64 só é necessário no *fio*, na hora
+ *    de enviar. A conversão custava +33% de disco em cima de um arquivo que
+ *    já é o maior do sistema.
+ * 2. Apagado quando a ronda é confirmada no servidor
+ *    (`discardRondaLocalCopies`). Antes nada apagava nunca: medido, cada
+ *    foto deixava ~9,3 MB de original permanente contra 0,13 MB da versão
+ *    que o relatório de fato usa — 98,6% do que o app gravava era dado que
+ *    nenhuma linha de código lia (`getOriginalPhotosForFinding` não tinha um
+ *    único chamador).
+ *
+ * Enquanto a Camada 2 (upload por foto, que leva a original pro servidor
+ * assim que ela é tirada) não existir, "apagar ao confirmar" é o
+ * comportamento certo: a original acompanha a ronda enquanto ela ainda pode
+ * precisar ser reenviada, e sai junto quando o servidor confirma.
  */
 const ORIGINAL_PHOTOS_STORE = "originalPhotos";
+/**
+ * Resumo das rondas já confirmadas — mesmo formato de `GET /convergia/ronda`.
+ *
+ * Existe porque a alternativa a manter o item inteiro na fila para sempre
+ * (com todas as fotos, ~2,7 a 5,1 MB por ronda, indefinidamente) não pode
+ * ser "esquecer que a ronda existiu": sem rede, a lista de rondas
+ * anteriores ficaria vazia. Guardar ~1 KB de resumo por ronda dá o mesmo
+ * histórico offline por um milésimo do espaço.
+ */
+const HISTORY_STORE = "history";
 
 /**
  * "invalid" (distinto de "error"): o servidor rejeitou o envio por
@@ -69,17 +97,28 @@ export interface OriginalPhotoRecord {
   id: string;
   achadoId: string;
   index: number;
-  dataBase64: string;
+  /** O arquivo como veio da câmera. `Blob` e não base64: o IndexedDB guarda binário nativamente, e a conversão só faz sentido no fio (ver nota em `ORIGINAL_PHOTOS_STORE`). */
+  blob: Blob;
   mimeType: string;
-  /** Tamanho do arquivo original em bytes, sem base64 — visibilidade real de quanto a cota do IndexedDB está sendo gasta (fotos originais são bem maiores que a versão de campo comprimida). */
+  /** Tamanho do arquivo original em bytes — visibilidade real de quanto da cota do IndexedDB está sendo gasta. */
   sizeBytes: number;
   savedAt: string;
+}
+
+/** Resumo de uma ronda confirmada, guardado localmente pra lista funcionar offline. Mesmo formato de `RondaSubmitResult` do api-client, redeclarado aqui pra `db.ts` não depender da camada de rede. */
+export interface HistoryEntry {
+  rondaId: string;
+  titulo: string;
+  data: string;
+  local: string;
+  achadosCount: number;
+  createdAt: string;
 }
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE)) {
         db.createObjectStore(STORE, { keyPath: "localId" });
@@ -92,6 +131,19 @@ function openDb(): Promise<IDBDatabase> {
       // chave externa fixa `DRAFT_KEY`, não por um campo de dentro dele.
       if (!db.objectStoreNames.contains(DRAFT_STORE)) {
         db.createObjectStore(DRAFT_STORE);
+      }
+      if (!db.objectStoreNames.contains(HISTORY_STORE)) {
+        db.createObjectStore(HISTORY_STORE, { keyPath: "rondaId" });
+      }
+      // v4: as originais deixaram de ser base64 e passaram a ser `Blob`. Os
+      // registros antigos são descartados no lugar de convertidos, e isso é
+      // seguro de afirmar: o store nunca teve um leitor
+      // (`getOriginalPhotosForFinding` não era chamada em lugar nenhum), então
+      // nenhum recurso do app perde nada. Na prática esta linha é o que
+      // devolve, de uma vez, os ~9 MB por foto que se acumularam desde o
+      // início no aparelho de quem já usou o app em campo.
+      if (event.oldVersion > 0 && event.oldVersion < 4 && db.objectStoreNames.contains(ORIGINAL_PHOTOS_STORE)) {
+        request.transaction?.objectStore(ORIGINAL_PHOTOS_STORE).clear();
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -203,42 +255,92 @@ export async function updateQueueSubmission(localId: string, submission: RondaSu
   await updateQueueItem(localId, { submission, status: "pending", lastError: undefined });
 }
 
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      resolve(result.slice(result.indexOf(",") + 1));
-    };
-    reader.onerror = () => reject(reader.error ?? new Error("Não foi possível ler a foto original."));
-    reader.readAsDataURL(file);
-  });
-}
-
 /**
  * Preserva o arquivo original (sem a compressão de campo) associado a um
  * achado — chamado a partir de `FindingCard`, além (não em vez) da versão
- * comprimida que vai pra `finding.fotos[]`/fila offline. Nunca lançado
- * envolvendo rede — puramente local.
+ * comprimida que vai pra `finding.fotos[]`/fila offline. Puramente local,
+ * nunca envolve rede.
+ *
+ * Nunca lança. Guardar a original é um "seria bom ter" (Decisão 4) e o
+ * arquivo é, de longe, o maior do sistema — é justamente ele que estoura a
+ * cota primeiro. Se estourar, o certo é o app seguir com a versão
+ * comprimida, que é a que o relatório usa, em vez de interromper o
+ * preenchimento em campo por causa de um arquivo de reserva.
  */
-export async function saveOriginalPhoto(achadoId: string, index: number, file: File): Promise<OriginalPhotoRecord> {
-  const dataBase64 = await fileToBase64(file);
+export async function saveOriginalPhoto(achadoId: string, index: number, file: File): Promise<OriginalPhotoRecord | null> {
   const record: OriginalPhotoRecord = {
     id: `${achadoId}:${index}`,
     achadoId,
     index,
-    dataBase64,
+    blob: file,
     mimeType: file.type || "application/octet-stream",
     sizeBytes: file.size,
     savedAt: new Date().toISOString(),
   };
-  await runTransaction(ORIGINAL_PHOTOS_STORE, "readwrite", (store) => store.put(record));
-  return record;
+  try {
+    await runTransaction(ORIGINAL_PHOTOS_STORE, "readwrite", (store) => store.put(record));
+    return record;
+  } catch (error) {
+    console.warn("[ronda] não foi possível guardar a foto original (a versão comprimida da ronda não é afetada)", error);
+    return null;
+  }
 }
 
 export async function getOriginalPhotosForFinding(achadoId: string): Promise<OriginalPhotoRecord[]> {
   const all = await runTransaction<OriginalPhotoRecord[]>(ORIGINAL_PHOTOS_STORE, "readonly", (store) => store.getAll());
   return all.filter((record) => record.achadoId === achadoId).sort((a, b) => a.index - b.index);
+}
+
+/**
+ * Libera tudo que uma ronda ocupava localmente depois de o servidor
+ * confirmá-la: o item da fila (com as fotos comprimidas embutidas) e as
+ * originais de todos os seus achados. No lugar fica só o resumo em
+ * `HISTORY_STORE`.
+ *
+ * É este método que corta o acúmulo permanente. Antes, uma ronda confirmada
+ * continuava inteira no aparelho para sempre — nada no código apagava
+ * item de fila sincronizado nem foto original, em nenhuma circunstância.
+ *
+ * Nunca lança: se a limpeza falhar, a ronda já está a salvo no servidor e
+ * derrubar o fluxo de sincronização por causa de uma faxina seria trocar um
+ * problema de espaço por um de confiabilidade.
+ */
+export async function discardRondaLocalCopies(item: QueueItem, summary: HistoryEntry): Promise<void> {
+  try {
+    await runTransaction(HISTORY_STORE, "readwrite", (store) => store.put(summary));
+    const originals = await runTransaction<OriginalPhotoRecord[]>(ORIGINAL_PHOTOS_STORE, "readonly", (store) => store.getAll());
+    const achadoIds = new Set(item.submission.achados.map((finding) => finding.id));
+    for (const original of originals) {
+      if (achadoIds.has(original.achadoId)) {
+        await runTransaction(ORIGINAL_PHOTOS_STORE, "readwrite", (store) => store.delete(original.id));
+      }
+    }
+    await deleteQueueItem(item.localId);
+  } catch (error) {
+    console.warn("[ronda] falha ao liberar as cópias locais de uma ronda já confirmada", error);
+  }
+}
+
+/** Resumos das rondas já confirmadas, mais recentes primeiro — é o que mantém "Ver rondas anteriores" útil sem rede. */
+export async function listHistory(): Promise<HistoryEntry[]> {
+  try {
+    const all = await runTransaction<HistoryEntry[]>(HISTORY_STORE, "readonly", (store) => store.getAll());
+    return all.sort((a, b) => b.data.localeCompare(a.data) || b.createdAt.localeCompare(a.createdAt));
+  } catch (error) {
+    console.warn("[ronda] falha ao ler o histórico local", error);
+    return [];
+  }
+}
+
+/** Reidrata o cache local com o que o servidor devolveu — mantém o histórico offline em dia sem depender de a ronda ter sido enviada por este aparelho. */
+export async function cacheHistory(entries: HistoryEntry[]): Promise<void> {
+  try {
+    for (const entry of entries) {
+      await runTransaction(HISTORY_STORE, "readwrite", (store) => store.put(entry));
+    }
+  } catch (error) {
+    console.warn("[ronda] falha ao atualizar o cache de histórico", error);
+  }
 }
 
 /**
