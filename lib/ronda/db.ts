@@ -180,6 +180,29 @@ export async function deleteQueueItem(localId: string): Promise<void> {
   await runTransaction(STORE, "readwrite", (store) => store.delete(localId));
 }
 
+/** Um item da fila pelo `localId`, ou `null` — usado pela tela de edição de ronda que ainda não subiu (`/ronda/fila/[localId]`). */
+export async function getQueueItem(localId: string): Promise<QueueItem | null> {
+  const item = await runTransaction<QueueItem | undefined>(STORE, "readonly", (store) => store.get(localId));
+  return item ?? null;
+}
+
+/**
+ * Substitui a ronda de um item da fila e o devolve para `pending`.
+ *
+ * Diferente de `PATCH /convergia/ronda/:id`, que faz upsert por `id` de
+ * achado e por isso não sabe remover nada: aqui o registro é local e
+ * inteiro, então a lista de achados é substituída de verdade — remover um
+ * achado nesta tela funciona, e é a única tela onde funciona.
+ *
+ * Voltar para `pending` é o ponto do método: editar um item que o servidor
+ * rejeitou (`invalid`) só tem sentido se a edição o recolocar na fila de
+ * reenvio. `lastError` é limpo junto — o erro descrevia o payload antigo,
+ * mantê-lo faria a tela acusar um problema que a edição pode ter resolvido.
+ */
+export async function updateQueueSubmission(localId: string, submission: RondaSubmission): Promise<void> {
+  await updateQueueItem(localId, { submission, status: "pending", lastError: undefined });
+}
+
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
