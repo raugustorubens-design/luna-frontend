@@ -14,8 +14,9 @@ import {
   type RiskState,
   type FindingClassification,
 } from "@/lib/ronda/types";
-import { compressPhoto } from "@/lib/ronda/photo";
+import { compressPhoto, photoToBase64 } from "@/lib/ronda/photo";
 import { saveOriginalPhoto } from "@/lib/ronda/db";
+import { uploadFoto, rondaFotoUrl } from "@/lib/ronda/api-client";
 import { getFotoSugestao } from "@/lib/ronda/api-client";
 
 /**
@@ -95,6 +96,21 @@ export function FindingCard({
     }
   }
 
+  /**
+   * Camada 2 do ADR-021 (decisão de campo, 16/08/2026): a foto sobe sozinha,
+   * agora, e o achado guarda só o id dela.
+   *
+   * Com rede, os bytes nunca tocam o aparelho — nem a comprimida no payload
+   * do relatório, nem a original no IndexedDB. É o que resolve, na raiz, os
+   * ~9,3 MB por foto que ficavam acumulados (medido em 16/08) e o que
+   * distribui a espera ao longo da caminhada em vez de concentrá-la no
+   * "Concluir".
+   *
+   * Sem rede, cai no caminho de sempre: comprimida embutida em `fotos[]`,
+   * original guardada localmente. `promoteEmbeddedPhotos` tenta de novo na
+   * conclusão. Falhar em subir nunca pode impedir alguém de registrar um
+   * achado em campo — por isso a queda é silenciosa, não um erro na tela.
+   */
   async function handlePhotoChange(event: React.ChangeEvent<HTMLInputElement>) {
     const files = event.target.files;
     if (!files || files.length === 0) return;
@@ -103,17 +119,39 @@ export function FindingCard({
     try {
       const fileList = Array.from(files);
       const compressed = await Promise.all(fileList.map(compressPhoto));
-      const startIndex = (finding.fotos ?? []).length;
-      onChange({ ...finding, fotos: [...(finding.fotos ?? []), ...compressed] });
-      // Foto original (não comprimida) preservada só localmente — Decisão 4
-      // da revisão de arquitetura, guardar a versão de maior resolução pra
-      // uma futura "versão de apresentação" (Fase 2) poder trabalhar com
-      // qualidade melhor que o teto de 1280px da versão de campo. Nunca faz
-      // parte de `fotos` (que é o que a fila offline envia) — só um registro
-      // paralelo em IndexedDB, associado ao mesmo achado por `id`.
-      await Promise.all(fileList.map((file, i) => saveOriginalPhoto(finding.id, startIndex + i, file)));
 
-      void applyPhotoSuggestion(compressed[0]);
+      const novosIds: string[] = [];
+      const aindaLocais: RondaPhoto[] = [];
+      const originaisParaGuardar: File[] = [];
+
+      // Sequencial: em rede de campo, N uploads simultâneos de vários MB
+      // pioram o tempo total e a chance de sucesso.
+      for (const [i, foto] of compressed.entries()) {
+        try {
+          const { fotoId } = await uploadFoto(foto.blob, fileList[i], finding.id);
+          novosIds.push(fotoId);
+        } catch {
+          aindaLocais.push(await photoToBase64(foto));
+          originaisParaGuardar.push(fileList[i]);
+        }
+      }
+
+      onChange({
+        ...finding,
+        ...(novosIds.length > 0 ? { fotoIds: [...(finding.fotoIds ?? []), ...novosIds] } : {}),
+        ...(aindaLocais.length > 0 ? { fotos: [...(finding.fotos ?? []), ...aindaLocais] } : {}),
+      });
+
+      // Original guardada só para o que não subiu — é ela que vai junto na
+      // segunda tentativa, em `promoteEmbeddedPhotos`.
+      const startIndex = (finding.fotos ?? []).length;
+      await Promise.all(originaisParaGuardar.map((file, i) => saveOriginalPhoto(finding.id, startIndex + i, file)));
+
+      // Sugestão por foto (Fase 4) precisa de base64; derivada só aqui, e
+      // sem bloquear — sugestão que falha não é erro de foto.
+      void photoToBase64(compressed[0])
+        .then((photo) => applyPhotoSuggestion(photo))
+        .catch(() => undefined);
     } catch (error) {
       setPhotoError(error instanceof Error ? error.message : "Falha ao processar a foto.");
     } finally {
@@ -161,6 +199,17 @@ export function FindingCard({
 
   function removePhoto(index: number) {
     onChange({ ...finding, fotos: (finding.fotos ?? []).filter((_, i) => i !== index) });
+  }
+
+  /**
+   * Tira a foto do achado, não do servidor. A foto vira órfã lá — consequência
+   * assumida do desenho em que ela sobe antes de a ronda existir. A política
+   * de expiração de foto não referenciada é decisão de backend, anotada como
+   * pendência; apagar daqui exigiria um DELETE que ninguém pode autorizar em
+   * campo, sobre um id que outra ronda pode estar referenciando.
+   */
+  function removeFotoId(fotoId: string) {
+    onChange({ ...finding, fotoIds: (finding.fotoIds ?? []).filter((id) => id !== fotoId) });
   }
 
   // Comportamento padrão de radiogroup (WAI-ARIA APG): setas move o foco E a
@@ -274,10 +323,35 @@ export function FindingCard({
           <div className="flex flex-col gap-1.5 text-xs text-slate-600 dark:text-slate-400">
             <span>Foto (opcional — nunca é obrigatória para avançar)</span>
             <div className="flex flex-wrap gap-2">
+              {/*
+                Duas origens na mesma faixa: foto já no servidor (por id) e
+                foto ainda no aparelho (bytes). O ponto âmbar marca a segunda —
+                em campo, saber o que já está a salvo é a diferença entre
+                confiar no app e conferir tudo de novo no fim.
+              */}
+              {(finding.fotoIds ?? []).map((fotoId) => (
+                <div key={fotoId} className="relative h-16 w-16 overflow-hidden rounded border border-black/15 dark:border-white/15">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={rondaFotoUrl(fotoId)} alt="" className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => removeFotoId(fotoId)}
+                    className="absolute right-0.5 top-0.5 rounded-full bg-black/70 px-1 text-[10px] text-white"
+                    aria-label="Remover foto"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
               {(finding.fotos ?? []).map((photo, index) => (
-                <div key={index} className="relative h-16 w-16 overflow-hidden rounded border border-black/15 dark:border-white/15">
+                <div key={`local-${index}`} className="relative h-16 w-16 overflow-hidden rounded border border-black/15 dark:border-white/15">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={`data:${photo.mimeType};base64,${photo.dataBase64}`} alt="" className="h-full w-full object-cover" />
+                  <span
+                    className="absolute bottom-0.5 left-0.5 h-2 w-2 rounded-full bg-amber-400 ring-1 ring-black/40"
+                    title="Ainda neste aparelho — sobe ao concluir a ronda"
+                    aria-label="Foto ainda não enviada"
+                  />
                   <button
                     type="button"
                     onClick={() => removePhoto(index)}

@@ -167,3 +167,33 @@ export async function patchRonda(rondaId: string, patch: RondaPatch): Promise<Ro
   const body = await response.json();
   return body.ronda as RondaSubmitResult;
 }
+
+/**
+ * `POST /convergia/ronda/foto` (Camada 2, decisão de campo 16/08/2026) — a
+ * foto sobe sozinha, no momento em que é tirada, e o relatório carrega só o
+ * id dela.
+ *
+ * Multipart, não JSON: base64 infla 33% no fio, e é justamente esse custo
+ * que impede a original de caber no payload de 25 MB do relatório. A
+ * original é opcional — em rede ruim, sobe só a versão de campo, que é a que
+ * o relatório usa, e nada se perde no documento final.
+ */
+export async function uploadFoto(campo: Blob, original?: Blob, achadoId?: string): Promise<{ fotoId: string }> {
+  const form = new FormData();
+  form.set("campo", campo, "campo.jpg");
+  if (original) form.set("original", original, "original.jpg");
+  if (achadoId) form.set("achadoId", achadoId);
+
+  const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/convergia/ronda/foto`, { method: "POST", body: form });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new RondaSubmitError(body?.error ?? `Falha ao enviar a foto (HTTP ${response.status}).`, body?.issues, response.status);
+  }
+  const body = await response.json();
+  return { fotoId: body.fotoId as string };
+}
+
+/** URL de exibição de uma foto já no servidor. `versao: "original"` pede o arquivo como saiu da câmera; o default é a versão de campo, que é a que o relatório mostra. */
+export function rondaFotoUrl(fotoId: string, versao?: "original"): string {
+  return `${LUNA_GATEWAY_BASE_URL}/convergia/ronda/foto/${encodeURIComponent(fotoId)}${versao === "original" ? "?versao=original" : ""}`;
+}

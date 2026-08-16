@@ -286,6 +286,15 @@ export async function saveOriginalPhoto(achadoId: string, index: number, file: F
   }
 }
 
+/** Apaga uma original específica — chamada quando ela já chegou ao servidor pelo upload por foto (Camada 2). */
+export async function deleteOriginalPhoto(id: string): Promise<void> {
+  try {
+    await runTransaction(ORIGINAL_PHOTOS_STORE, "readwrite", (store) => store.delete(id));
+  } catch (error) {
+    console.warn("[ronda] falha ao apagar uma foto original já enviada", error);
+  }
+}
+
 export async function getOriginalPhotosForFinding(achadoId: string): Promise<OriginalPhotoRecord[]> {
   const all = await runTransaction<OriginalPhotoRecord[]>(ORIGINAL_PHOTOS_STORE, "readonly", (store) => store.getAll());
   return all.filter((record) => record.achadoId === achadoId).sort((a, b) => a.index - b.index);

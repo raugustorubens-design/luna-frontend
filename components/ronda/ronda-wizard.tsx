@@ -21,6 +21,7 @@ import {
 } from "@/lib/ronda/types";
 import { getFlags, getSugestoes, postCorrecaoSugestao, RondaSubmitError } from "@/lib/ronda/api-client";
 import { enqueueRonda, loadDraft, saveDraft, clearDraft } from "@/lib/ronda/db";
+import { promoteEmbeddedPhotos } from "@/lib/ronda/foto-upload";
 import { useRondaQueue } from "@/lib/ronda/use-ronda-queue";
 import { QueueStatusBar } from "./queue-status-bar";
 import { FindingCard } from "./finding-card";
@@ -250,7 +251,14 @@ export function RondaWizard() {
 
   async function handleConclude() {
     if (!canConclude) return;
-    const item = await enqueueRonda({ metadata, achados: findings, encerramento: closing });
+    // Camada 2: última tentativa de subir as fotos que ficaram no aparelho
+    // (sem rede no momento do clique). Cada uma que sobe sai do payload do
+    // relatório e sai do armazenamento local — e é o único caminho pelo qual
+    // a original chega ao servidor. Nunca lança: falhar aqui só significa
+    // que a ronda vai como sempre foi, com os bytes embutidos.
+    const achados = await promoteEmbeddedPhotos(findings);
+    if (achados !== findings) setFindings(achados);
+    const item = await enqueueRonda({ metadata, achados, encerramento: closing });
     // A ronda virou item de fila — o rascunho já cumpriu o papel dele e
     // some, pra próxima abertura do app não oferecer "recuperar" uma ronda
     // que já foi concluída.
@@ -264,7 +272,7 @@ export function RondaWizard() {
     // bloqueia a conclusão nem depende da ronda já ter sincronizado com o
     // servidor (`item.localId` identifica a ronda mesmo offline;
     // `postCorrecaoSugestao` nunca lança, falha some em silêncio).
-    for (const finding of findings) {
+    for (const finding of achados) {
       const record = suggestionOrigins[finding.id];
       if (!record) continue;
       const camposCorrigidos = diffSuggestionFields(record, finding);
