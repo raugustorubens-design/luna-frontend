@@ -82,7 +82,10 @@ export interface RondaFinding {
   flagId?: string | null;
   estado: RiskState;
   departamento?: string;
+  /** Fotos embutidas no relatório, em base64 — caminho de contingência desde a Camada 2: só carrega bytes a foto que não conseguiu subir sozinha durante a ronda. */
   fotos?: RondaPhoto[];
+  /** Fotos já armazenadas no servidor (`POST /convergia/ronda/foto`), referenciadas por id. Caminho normal com rede: mantém o relatório em texto puro e tira os bytes do aparelho na hora em que a foto é tirada. */
+  fotoIds?: string[];
   classificacao?: FindingClassification;
   gravidade?: FindingSeverity;
   descricao?: string;
