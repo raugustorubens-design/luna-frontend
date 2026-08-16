@@ -19,14 +19,54 @@ export function isPermanentRejection(error: unknown): boolean {
   return error instanceof RondaSubmitError && error.status === 422;
 }
 
-/** Tenta enviar todo item "pending"/"error" da fila, um de cada vez (evita disparar N requisições simultâneas de foto grande na primeira reconexão). */
+/**
+ * Devolve à fila os itens presos em "syncing" — achado de campo em
+ * 16/08/2026 (barra de status mostrando "1 enviando…" indefinidamente, com
+ * uma ronda inteira dentro).
+ *
+ * `trySyncPendingRondas` grava "syncing" *antes* de disparar a requisição.
+ * Se a aba morre no meio (Chrome descartando aba em segundo plano, app
+ * fechado, rede pendurada), o item fica gravado como "syncing" pra sempre —
+ * e o filtro de reenvio só pegava "pending"/"error". Resultado: ronda
+ * íntegra no IndexedDB, invisível pra todo mecanismo de retry, sem nenhuma
+ * forma de destravar pela interface.
+ *
+ * Só é chamada de dentro de `trySyncPendingRondas`, logo depois do guarda
+ * `if (syncing) return` — ou seja, num momento em que sabidamente não há
+ * envio em curso *nesta* aba. Todo "syncing" que sobrou no banco é,
+ * portanto, herança de uma sessão que não existe mais.
+ *
+ * Risco assumido conscientemente: se a requisição chegou a completar no
+ * servidor e só o registro local do sucesso se perdeu, o reenvio cria uma
+ * ronda duplicada. Duplicata é visível e descartável pelo histórico; ronda
+ * perdida em campo não se recupera de jeito nenhum. Enquanto o backend não
+ * aceitar `localId` como chave de idempotência (pendência a levar pra
+ * luna-core), essa é a troca certa. Mesma ressalva pro caso raro de duas
+ * abas abertas: a segunda pode reclamar um envio ainda em curso na primeira.
+ */
+/** Parte pura da recuperação (testável sem IndexedDB): "syncing" vira "pending", o resto passa intacto. */
+export function reclaimStaleSyncingItems(items: QueueItem[]): QueueItem[] {
+  return items.map((item) => (item.status === "syncing" ? { ...item, status: "pending", lastError: undefined } : item));
+}
+
+async function reclaimStaleSyncing(items: QueueItem[], onProgress?: (item: QueueItem) => void): Promise<QueueItem[]> {
+  const reclaimed = reclaimStaleSyncingItems(items);
+  for (const [index, item] of items.entries()) {
+    if (item.status !== "syncing") continue;
+    await updateQueueItem(item.localId, { status: "pending", lastError: undefined });
+    onProgress?.(reclaimed[index]);
+  }
+  return reclaimed;
+}
+
+/** Tenta enviar todo item "pending"/"error" da fila, um de cada vez (evita disparar N requisições simultâneas de foto grande na primeira reconexão). Itens órfãos em "syncing" voltam pra "pending" antes — ver `reclaimStaleSyncing`. */
 export async function trySyncPendingRondas(onProgress?: (item: QueueItem) => void): Promise<void> {
   if (syncing) return; // evita corridas: evento 'online' + chamada manual ao mesmo tempo
   if (typeof navigator !== "undefined" && !navigator.onLine) return;
 
   syncing = true;
   try {
-    const items = await listQueue();
+    const items = await reclaimStaleSyncing(await listQueue(), onProgress);
     const toSend = items.filter((item) => item.status === "pending" || item.status === "error");
 
     for (const item of toSend) {
