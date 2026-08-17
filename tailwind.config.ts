@@ -7,7 +7,17 @@ export default {
   // dark: antes disto (Forge/User Mode usam variáveis CSS via :root, não
   // esse mecanismo), então ligar isto aqui não muda nada fora de /ronda.
   darkMode: "class",
-  content: ["./app/**/*.{js,ts,jsx,tsx}", "./components/**/*.{js,ts,jsx,tsx}"],
+  // ADR-022, 17/08/2026 — `./lib/**` acrescentado ao glob. As classes de
+  // preenchimento da classificação vivem em `lib/site/classification.ts`
+  // (mesmo padrão de `CLASSIFICATION_FILL_CLASS` em `finding-card.tsx`: classe
+  // estática, escaneável pelo JIT). Sem `lib/` no glob o JIT não as encontra e
+  // os selos saem sem fundo nenhum — visto na primeira renderização de `/v2`.
+  // Puramente aditivo: nenhum caminho anterior saiu da lista.
+  content: [
+    "./app/**/*.{js,ts,jsx,tsx}",
+    "./components/**/*.{js,ts,jsx,tsx}",
+    "./lib/**/*.{js,ts,jsx,tsx}"
+  ],
   theme: {
     extend: {
       colors: {
