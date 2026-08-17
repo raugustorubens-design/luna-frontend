@@ -374,6 +374,28 @@ body {
  * trinta arquivos. Nenhuma declaração original foi removida: cada linha traz
  * o valor anterior em comentário ao lado.
  *
+ * Revisão do Engenheiro, luna-frontend#28 (17/08/2026): o bloco anterior
+ * (`--luna-*`, acima) diz "nenhum componente antigo lê daqui" — verdade só
+ * para aquele bloco. Este aqui é o oposto de propósito: religa exatamente o
+ * que componente antigo já lê. Consequência real, conferida arquivo por
+ * arquivo, não assumida:
+ *
+ *   - `/forge` (o layout ATUAL, `forge-layout.tsx`) MUDA DE COR — usa
+ *     `border-b`, `bg-primary`, `text-muted-foreground` direto, e
+ *     `components/ui/{button,resizable,tabs}.tsx` (shadcn) leem os mesmos
+ *     tokens. O *arranjo* dos painéis não muda; a paleta, sim — é o que o
+ *     pacote pediu.
+ *   - `/` (Modo Usuário atual, `app/page.tsx`) NÃO MUDA — nenhum componente
+ *     que ele renderiza (`hero.tsx`, `cognitive-dashboard.tsx` etc.) importa
+ *     `components/ui/*` nem usa `bg-background`/`text-foreground`/
+ *     `border-border`/`bg-primary`/`bg-muted`/`text-muted-foreground`/
+ *     `bg-secondary`/`bg-destructive`/`ring-ring` — confirmado por grep no
+ *     momento desta revisão, não por suposição. Usa `luna.*` do
+ *     `tailwind.config.ts` direto, como o comentário original de
+ *     `app/globals.css` já registrava.
+ *   - `/ronda` NÃO MUDA — valores diretos (`bg-[#F4F6FB] dark:bg-[#1E2761]`
+ *     e companhia), nenhum destes tokens.
+ *
  * Aproximação assumida: o shadcn lê `hsl(var(--token))` sem canal alfa, então
  * as superfícies translúcidas da paleta (branco 6%, 15% …) entram aqui já
  * compostas sobre o Midnight. Onde a translucidez importa de verdade — os

@@ -53,6 +53,15 @@ export default {
           violetGlow: "#A78BFA",
           cyan: "#06B6D4",
           cyanHi: "#22D3EE",
+          // Revisão do Engenheiro, luna-frontend#28 apontamento 2 (17/08/2026):
+          // token LEGADO do Modo Usuário v1 (`chat-terminal.tsx` é o único uso
+          // hoje). Classificação (conforme/atenção/não conforme) usa
+          // `luna.ok`/`luna.warn`/`luna.fail`, não este — as duas cores de
+          // "verde" convivendo com nomes igualmente plausíveis é o tipo de
+          // ambiguidade que quebra a garantia de "mesma cor no celular, no
+          // relatório e no site" se alguém usar a errada por engano.
+          // `constitution-check.mjs` reprova `luna-success`/`luna-danger` em
+          // `components/site/**` por isso — não remova sem atualizar o script.
           success: "#10B981",
           // ADR-022, 17/08/2026 — único ponto do arquivo em que uma chave
           // existente foi *reatribuída* em vez de acrescentada: `warn` é o
@@ -65,6 +74,8 @@ export default {
           // nenhuma outra parte do repositório.
           warn: "#E8A33D",
           // warn: "#F59E0B",  ← valor anterior (âmbar do Tailwind)
+          // Mesmo caso de `success` acima: legado do v1, não é o vermelho de
+          // classificação (`luna.fail`). Guardado pelo mesmo constitution-check.
           danger: "#EF4444",
           text: "#F9FAFB",
           textSub: "#CBD5E1",

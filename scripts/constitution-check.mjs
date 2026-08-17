@@ -6,6 +6,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { containsDatabaseModuleImport } from "./constitution-rules.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
 const SKIP_DIRS = new Set(["node_modules", ".next", ".git", "dist", "out"]);
@@ -42,19 +43,14 @@ const sourceFiles = [
 
 assert.ok(sourceFiles.length > 0, "luna-frontend source files must exist for this check to mean anything");
 
-// ADR-022, 17/08/2026 — estreitado para casar só especificador de import/
-// require, não a palavra solta em qualquer lugar do arquivo. A versão
-// anterior (`/supabase|drizzle|.../i`, sem âncora) reprovava qualquer menção
-// em prosa — ex. o razão de estado de `/v2` descreve, em texto real e
-// verificável, que a Memória "grava no Supabase com vetor semântico"
-// (`components/site/state-ledger.tsx`, `pipeline.tsx`). Isso nunca foi uma
-// importação de banco, e o próprio `PROVIDER_TOKENS` logo abaixo já segue
-// esse princípio — casa `GroqAdapter`, não a palavra solta "Groq" (que
-// aparece como rótulo de UI em `lib/forge/attribution.ts` sem disparar o
-// checker). Continua pegando `import ... from "@supabase/supabase-js"`,
-// `require("pg")`, import dinâmico etc. — só não pega mais texto de tela.
-const DATABASE_TOKENS =
-  /(?:from\s+|require\(\s*|import\(\s*)["'](?:[^"']*\/)?(?:@supabase\/supabase-js|drizzle-orm|pg)["']/i;
+// Revisão do Engenheiro, luna-frontend#28 apontamento 1 (17/08/2026) — a
+// regra de "nenhum acesso a banco direto" mora em `constitution-rules.mjs`,
+// pra poder ser testada isoladamente (`scripts/__tests__/constitution-rules.test.ts`).
+// Ver o comentário lá para o histórico completo: casava a palavra solta em
+// qualquer lugar do arquivo → estreitada pra especificador de import exato
+// → generalizada pra família de módulo (pega `@supabase/ssr`,
+// `drizzle-orm/pg-core`, `import "pg"` sem `from`, que o nome exato deixava
+// passar).
 const PROVIDER_TOKENS =
   /GroqAdapter|ChatGptAdapter|ClaudeAdapter|GrokAdapter|ManusAdapter|api\.groq\.com|api\.openai\.com|api\.anthropic\.com/;
 const INTERNAL_ORGAN_IMPORT = /from\s+["']\.{2,}\/(.*\/)?apps\/frontend\/artifacts\/api-server\/src\//;
@@ -68,9 +64,8 @@ for (const relativePath of sourceFiles) {
     continue;
   }
 
-  assert.doesNotMatch(
-    source,
-    DATABASE_TOKENS,
+  assert.ok(
+    !containsDatabaseModuleImport(source),
     `Forge must never access a database directly (found in ${relativePath})`,
   );
   assert.doesNotMatch(
@@ -115,4 +110,24 @@ assert.match(
   `${terminalServerPath} must keep the terminal token check — regression guard for the unauthenticated-shell finding`,
 );
 
-console.log(`Constitution checks passed (${sourceFiles.length} files scanned).`);
+// ---- Modo Usuário v2 must not reach for the legacy v1 palette (ADR-022, ----
+// ---- revisão do Engenheiro luna-frontend#28 apontamento 2, 17/08/2026) ----
+// `luna.success`/`luna.danger` (tailwind.config.ts) são tokens do Modo
+// Usuário v1, não a paleta de classificação (`luna.ok`/`luna.warn`/
+// `luna.fail`) — as duas convivem com nomes igualmente plausíveis, e é
+// exatamente o tipo de fronteira que este script existe pra guardar: sem
+// isto, um "não conformidade" pode sair com uma cor diferente da do
+// celular/relatório só porque alguém escreveu `text-luna-danger` achando
+// que era o vermelho certo.
+const LEGACY_CLASSIFICATION_TOKEN = /\bluna-(?:success|danger)\b/;
+const siteFiles = listFiles("components/site", [".ts", ".tsx"]);
+for (const relativePath of siteFiles) {
+  const source = readFileSync(join(root, relativePath), "utf8");
+  assert.doesNotMatch(
+    source,
+    LEGACY_CLASSIFICATION_TOKEN,
+    `components/site/** must use luna-ok/luna-warn/luna-fail for classification, not the legacy v1 tokens luna-success/luna-danger (found in ${relativePath})`,
+  );
+}
+
+console.log(`Constitution checks passed (${sourceFiles.length} files scanned, ${siteFiles.length} components/site files checked for legacy classification tokens).`);
