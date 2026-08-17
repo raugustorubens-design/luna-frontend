@@ -1513,3 +1513,131 @@ cada ronda antiga listada ali e descartar o item.
 - Mudança no backend (`luna-core`) — a validação atual (exigir `id`) está
   correta pro contrato atual; decidido não "fazer o 422 sumir" mudando o
   que o servidor aceita.
+
+## 2026-08-17 — Fix urgente: gate do wizard divergia do servidor — ronda real do Sylvamo presa em campo com duas fotos só naquele aparelho
+
+### Achado
+
+Pacote `GENESIS_2026-08-17_URGENTE_gate-ronda-divergente.md`: em produção,
+17/08 às 13:58, uma ronda real (Sylvamo — LOGISTICA MG, Turno B) foi
+rejeitada com `422` ("Envio de ronda reprovado na validação (6
+problema(s))") e caiu em `"invalid"` na fila do dispositivo do Architect.
+A tela de edição não dizia quais eram os 6 problemas e mostrava duas
+instruções contraditórias na mesma caixa ("Refaça esta ronda e descarte
+este item" ao lado de "Corrija o que estiver faltando abaixo e salve").
+
+### Causa raiz
+
+`luna-core/src/convergia/ronda/validation.ts` (`requiredWhenIdentified`)
+exige `departamento`, `classificacao`, `gravidade` e `descricao` em todo
+achado `identificado` — regra correta, não alterada aqui. O gate do
+cliente (`pendingFindings` em `ronda-wizard.tsx`) só verificava achado
+`"nao_avaliado"`, nunca esses quatro campos: "Concluir ronda" habilitava,
+a ronda entrava na fila, subia, e o servidor recusava com `422` — sempre
+depois do fato, nunca antes.
+
+### O que mudou
+
+1. **`lib/ronda/types.ts`** — `missingRequiredWhenIdentified(finding)` e
+   `findingsWithMissingFields(findings)`, espelhando
+   `requiredWhenIdentified()` do servidor, mesmo nome. Foto fica de fora,
+   deliberadamente (já era assim do lado do servidor). `ValidationIssue`
+   nomeado (antes um tipo inline em `RondaSubmitError`).
+2. **`ronda-wizard.tsx`** — `canConclude` soma `pendingFindings` e
+   `findingsWithMissingFields`; o aviso na Etapa C nomeia o achado e os
+   campos ("Achado manual — falta departamento e descrição"), nunca uma
+   contagem.
+3. **`finding-card.tsx`** — os quatro campos ganham marcação âmbar
+   enquanto vazios e o achado está `identificado`, mesmo tratamento visual
+   de `lowConfidenceFields` (sugestão incerta da IA), unificados numa
+   função só (`fieldNotice`) pra não duplicar a lógica quatro vezes.
+   `serverIssues` (prop nova, opcional) deixa a mensagem real do servidor
+   substituir o texto genérico quando disponível.
+4. **`lib/ronda/issues.ts`** (novo) — `parseIssuePath` traduz
+   `achados.{id}.{campo}` → `{ findingId, field }`, tolerante a formato
+   que muda; `classifyQueueRejection` decide entre `"recoverable"`
+   (toda issue mapeia pra um dos 4 campos) e `"unrecoverable"` (formato
+   pré-migração ou sem `issues`).
+5. **`api-client.ts`** / **`db.ts`** / **`queue.ts`** — `RondaSubmitError.issues`
+   agora sobrevive até o registro `"invalid"` da fila (`QueueItem.issues`,
+   campo novo, sem migração de schema — `IDBObjectStore` não valida forma
+   de registro). `queue.ts` escolhe a mensagem certa na hora da rejeição
+   (`classifyQueueRejection`), em vez do texto único que combinava as duas
+   instruções.
+6. **`ronda-editor.tsx`** — `serverIssues` por achado (de `queueIssues`,
+   via `splitIssues`); issues sem achado correspondente aparecem numa
+   lista à parte, com o texto do servidor. O parágrafo extra "corrija
+   abaixo e salve" só aparece quando **não há** `issues` guardadas (Etapa
+   4, rede de segurança pra item preso antes desta correção) — com
+   `issues` frescas, `lastError` já é a mensagem definitiva e um segundo
+   parágrafo duplicaria a instrução (bug achado e corrigido durante a
+   própria verificação desta entrada, ver abaixo). Botão "Descartar"
+   escondido quando o item é `"invalid"` e recuperável.
+7. **`queue-status-bar.tsx`** — mesma classificação aplicada à barra que
+   aparece no topo do wizard (a primeira coisa visível ao abrir `/ronda`):
+   trocou o texto que presumia "formato antigo" para todo item `"invalid"`
+   por um link "Corrigir" (pra `/ronda/fila/[localId]`) nos recuperáveis e
+   "Descartar" só nos genuinamente irrecuperáveis.
+
+### Verificação — o que foi verificado neste ambiente
+
+1. `pnpm typecheck` — limpo.
+2. `pnpm test` — **70 testes** (eram 56; 14 novos, nenhum alterado ou
+   removido): `missingRequiredWhenIdentified` (achado não-identificado,
+   completo, e o caso exato de 17/08 — departamento e descrição vazios com
+   classificação e gravidade preenchidas), a regra de foto nunca aparecer
+   na lista travada em teste, `findingsWithMissingFields`,
+   `duplicateFinding` propagando incompletude, `parseIssuePath` (caminho
+   válido, de metadado, malformado, id com ponto) e `classifyQueueRejection`
+   (sem issues, todas mapeáveis, formato pré-migração, mistura).
+3. `pnpm run test:constitution` — limpo (98 arquivos).
+4. `pnpm build` — limpo.
+5. **Ponta a ponta real no wizard, via Playwright contra `pnpm dev`**
+   (sem backend — o Catálogo de flags falha ao carregar, "Achado avulso"
+   funciona sem ele): Etapa A preenchida, achado manual deixado incompleto
+   → "Concluir LUNA Safety Walk" **confirmado desabilitado**, aviso nomeia
+   "Achado manual — falta departamento, classificação, gravidade e
+   descrição", os quatro campos acendem âmbar no card. Preenchidos os
+   quatro → aviso some, botão **confirmado habilitado**.
+6. **Editor de item de fila, via IndexedDB seedado diretamente** (mesmo
+   motivo: sem backend real disponível neste ambiente pra produzir um 422
+   de verdade) — três cenários:
+   - Item `"invalid"` com `issues` frescas (pós-fix): campos acendem com o
+     texto real do servidor ("Required"), botão Descartar ausente, uma
+     única instrução na caixa (achado e corrigido: a primeira versão
+     duplicava "corrija abaixo e salve" mesmo já vindo em `lastError` —
+     ver item 6 de "O que mudou").
+   - Item `"invalid"` **sem** `issues` (simulando um item preso *antes*
+     desta correção) com achado localmente incompleto: rede de segurança
+     da Etapa 1 confirmada — campos acendem (texto genérico, sem
+     `serverIssues`), mensagem histórica contraditória preservada tal
+     qual (não reescrita) e seguida da instrução corrigida, Descartar
+     ausente.
+   - Item `"invalid"` sem `issues` e sem campo faltando localmente:
+     classificado `unrecoverable`, uma instrução só, Descartar presente.
+   - Mesmos três cenários confirmados também na barra de status do topo
+     do wizard (`queue-status-bar.tsx`): link "Corrigir" nos dois
+     recuperáveis, "Descartar" no irrecuperável; clique em "Corrigir"
+     confirmado navegando pra `/ronda/fila/[localId]`.
+
+### O que NÃO foi verificado (reportado sem confirmação)
+
+- **A ronda real do Sylvamo, no aparelho do Architect.** Este ambiente não
+  tem acesso ao dispositivo nem ao backend de produção (`luna-core`
+  reachable) — não foi possível reproduzir o `422` real nem confirmar que
+  a ronda específica de 17/08 sobe depois do fix. **Portão real, do
+  próprio pacote:** só fecha quando o Architect abrir `/ronda` → "Ver
+  rondas anteriores" → a ronda recusada, ver os campos acesos, preencher,
+  salvar e confirmar que ela sobe.
+- Round-trip real contra `luna-core` (POST /convergia/ronda com achado
+  incompleto de propósito, confirmando `422` com `issues` no formato
+  atual) — sem backend acessível neste ambiente. A forma do `issues`
+  (`achados.{id}.{campo}`) foi assumida a partir do exemplo do próprio
+  pacote e do `BUILDER.md` de 15/08, não capturada de novo agora.
+
+### O que este pacote não faz (herdado do pedido original, confirmado respeitado)
+
+- Não afrouxa a validação do servidor.
+- Não torna foto obrigatória, em nenhum estado (travado em teste).
+- Não migra formato antigo.
+- Não toca em `app/forge/`, `components/forge/` nem `app/page.tsx`.

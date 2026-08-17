@@ -8,6 +8,9 @@ import {
   emptyClosing,
   metadataComplete,
   pendingFindings,
+  findingsWithMissingFields,
+  findingTitle,
+  MISSING_FIELD_LABELS,
   newFinding,
   duplicateFinding,
   diffSuggestionFields,
@@ -18,6 +21,7 @@ import {
   type RondaFlag,
   type RondaSuggestion,
   type SuggestionRecord,
+  type MissingField,
 } from "@/lib/ronda/types";
 import { getFlags, getSugestoes, postCorrecaoSugestao, RondaSubmitError } from "@/lib/ronda/api-client";
 import { enqueueRonda, loadDraft, saveDraft, clearDraft } from "@/lib/ronda/db";
@@ -28,6 +32,13 @@ import { FindingCard } from "./finding-card";
 import { ThemeToggle } from "./theme-toggle";
 
 type Step = "A" | "B" | "C" | "done";
+
+/** "departamento, classificação e descrição" — lista em português natural, não uma contagem. */
+function formatMissingFieldList(missing: MissingField[]): string {
+  const labels = missing.map((field) => MISSING_FIELD_LABELS[field]);
+  if (labels.length <= 1) return labels.join("");
+  return `${labels.slice(0, -1).join(", ")} e ${labels[labels.length - 1]}`;
+}
 
 /**
  * Etapa B (achado dinâmico — revisão de arquitetura, Decisões 1-3): a
@@ -152,7 +163,14 @@ export function RondaWizard() {
   }, []);
 
   const pending = useMemo(() => pendingFindings(findings), [findings]);
-  const canConclude = pending.length === 0;
+  // Gate divergente de 17/08/2026: "Concluir ronda" só travava em achado
+  // "não avaliado" — nunca nos quatro campos que o servidor exige quando um
+  // achado está "identificado" (`requiredWhenIdentified` em
+  // `luna-core/src/convergia/ronda/validation.ts`). A ronda passava aqui,
+  // entrava na fila e o servidor recusava com 422. Soma as duas condições —
+  // espelha exatamente o que o servidor valida, não afrouxa nem o servidor.
+  const incomplete = useMemo(() => findingsWithMissingFields(findings), [findings]);
+  const canConclude = pending.length === 0 && incomplete.length === 0;
 
   /**
    * `data` fica de fora de propósito: `emptyMetadata()` já nasce com a data
@@ -470,7 +488,27 @@ export function RondaWizard() {
 
             {!canConclude && (
               <div className="rounded border border-amber-400/40 bg-amber-400/40 p-3 text-xs text-amber-900 dark:bg-amber-400/10 dark:text-amber-300">
-                <p className="mb-1 font-medium">Ainda há {pending.length} achado(s) marcado(s) como &quot;não avaliado&quot; — revise antes de concluir.</p>
+                {pending.length > 0 && (
+                  <p className="mb-1 font-medium">Ainda há {pending.length} achado(s) marcado(s) como &quot;não avaliado&quot; — revise antes de concluir.</p>
+                )}
+                {/*
+                  Gate divergente de 17/08/2026: nomeia o achado e os campos
+                  que faltam, nunca só uma contagem — é o que faltava na tela
+                  de erro do servidor que deixou uma ronda real presa em
+                  campo sem ninguém saber o que corrigir.
+                */}
+                {incomplete.length > 0 && (
+                  <div className={pending.length > 0 ? "mt-2" : undefined}>
+                    <p className="mb-1 font-medium">Faltam campos obrigatórios:</p>
+                    <ul className="list-disc pl-4">
+                      {incomplete.map(({ finding, missing }) => (
+                        <li key={finding.id}>
+                          {findingTitle(finding)} — falta {formatMissingFieldList(missing)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
           </div>

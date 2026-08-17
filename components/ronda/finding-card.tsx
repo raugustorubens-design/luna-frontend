@@ -2,17 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  FLAG_LABELS,
   RISK_STATES,
   RISK_STATE_LABELS,
   FINDING_CLASSIFICATIONS,
   FINDING_CLASSIFICATION_LABELS,
   FINDING_SEVERITIES,
   FINDING_SEVERITY_LABELS,
+  findingTitle,
+  missingRequiredWhenIdentified,
   type RondaFinding,
   type RondaPhoto,
   type RiskState,
   type FindingClassification,
+  type MissingField,
 } from "@/lib/ronda/types";
 import { compressPhoto, photoToBase64 } from "@/lib/ronda/photo";
 import { saveOriginalPhoto } from "@/lib/ronda/db";
@@ -55,6 +57,7 @@ export function FindingCard({
   onDuplicate,
   onRemove,
   onSuggestionApplied,
+  serverIssues,
 }: {
   finding: RondaFinding;
   onChange: (next: RondaFinding) => void;
@@ -64,6 +67,15 @@ export function FindingCard({
   onRemove?: (findingId: string) => void;
   /** Reporta pro chamador quais campos uma sugestão de foto (Fase 4) de fato preencheu, pra Parte 3 (correção humana vira aprendizado) comparar sugerido-vs-salvo na hora de concluir. */
   onSuggestionApplied?: (findingId: string, sugerido: Partial<RondaFinding>) => void;
+  /**
+   * Gate divergente de 17/08/2026 (Etapa 2) — mensagem real do 422 do
+   * servidor, por campo, quando este card está sendo editado a partir de um
+   * item de fila rejeitado (`ronda-editor.tsx`). Opcional e aditivo: omitido
+   * (caso do wizard), o card continua marcando os mesmos campos com a
+   * mensagem genérica calculada localmente por `missingRequiredWhenIdentified`
+   * — a mesma regra, só sem o texto exato do servidor.
+   */
+  serverIssues?: Partial<Record<MissingField, string>>;
 }) {
   const [compressing, setCompressing] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
@@ -81,7 +93,41 @@ export function FindingCard({
     findingRef.current = finding;
   }, [finding]);
 
-  const title = (finding.flagId && FLAG_LABELS[finding.flagId]) || "Achado manual";
+  const title = findingTitle(finding);
+  // Gate divergente de 17/08/2026: os quatro campos que o servidor exige
+  // quando `estado === "identificado"` (ver `missingRequiredWhenIdentified`)
+  // ganham marcação âmbar enquanto vazios — mesmo tratamento visual que
+  // `lowConfidenceFields` já usa pra sugestão incerta da IA, reaproveitado
+  // em vez de inventar um segundo padrão. Recalculado a cada render: é
+  // função pura do próprio `finding`, não precisa de prop nem estado novo.
+  const missingFields = missingRequiredWhenIdentified(finding);
+
+  /**
+   * Uma única régua para os quatro campos obrigatórios, em vez de repetir a
+   * mesma condição amber quatro vezes com pequenas divergências — "não
+   * invente um segundo padrão" vale também para o próprio padrão dentro
+   * deste componente. Prioridade quando mais de um sinal existe (raro: os
+   * três descrevem estados diferentes do campo — vazio vs. preenchido com
+   * baixa confiança — então normalmente só um se aplica por vez):
+   * 1. IA incerta (`lowConfidenceFields`) — só existe quando o campo já tem
+   *    um valor, o palpite da IA;
+   * 2. mensagem real do servidor (`serverIssues`, Etapa 2) — mais específica
+   *    que o texto genérico, quando disponível (edição de item rejeitado);
+   * 3. obrigatório e vazio, calculado localmente (Etapa 1) — sempre
+   *    disponível, é o que resolve o caso preso mesmo sem a Etapa 2.
+   */
+  function fieldNotice(field: MissingField): { text: string } | null {
+    if ((field === "classificacao" || field === "gravidade") && lowConfidenceFields.has(field)) {
+      return { text: "IA não teve certeza — revise" };
+    }
+    if (serverIssues?.[field]) {
+      return { text: serverIssues[field]! };
+    }
+    if (missingFields.includes(field)) {
+      return { text: "Obrigatório — falta preencher" };
+    }
+    return null;
+  }
 
   function setEstado(estado: RiskState) {
     if (estado === "identificado") {
@@ -309,8 +355,19 @@ export function FindingCard({
 
       {isIdentified && (
         <div className="mt-3 flex flex-col gap-3 border-t border-black/10 pt-3 dark:border-white/10">
-          <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
-            Departamento
+          <label
+            className={`flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400 ${
+              fieldNotice("departamento") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
+              Departamento
+              {fieldNotice("departamento") && (
+                <span className="rounded-full bg-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
+                  {fieldNotice("departamento")!.text}
+                </span>
+              )}
+            </span>
             <input
               type="text"
               value={finding.departamento ?? ""}
@@ -378,14 +435,14 @@ export function FindingCard({
 
           <div
             className={`flex flex-col gap-1.5 text-xs text-slate-600 dark:text-slate-400 ${
-              lowConfidenceFields.has("classificacao") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
+              fieldNotice("classificacao") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
             }`}
           >
             <span className="flex items-center gap-1.5">
               Classificação
-              {lowConfidenceFields.has("classificacao") && (
+              {fieldNotice("classificacao") && (
                 <span className="rounded-full bg-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
-                  IA não teve certeza — revise
+                  {fieldNotice("classificacao")!.text}
                 </span>
               )}
             </span>
@@ -424,14 +481,14 @@ export function FindingCard({
 
           <label
             className={`flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400 ${
-              lowConfidenceFields.has("gravidade") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
+              fieldNotice("gravidade") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
             }`}
           >
             <span className="flex items-center gap-1.5">
               Gravidade
-              {lowConfidenceFields.has("gravidade") && (
+              {fieldNotice("gravidade") && (
                 <span className="rounded-full bg-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
-                  IA não teve certeza — revise
+                  {fieldNotice("gravidade")!.text}
                 </span>
               )}
             </span>
@@ -475,8 +532,19 @@ export function FindingCard({
           </label>
 
           {/* textarea nativa, sem componente customizado — teclado nativo aparece normalmente, o que garante ditado por voz de graça (ADR-021). */}
-          <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
-            Descrição
+          <label
+            className={`flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400 ${
+              fieldNotice("descricao") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
+              Descrição
+              {fieldNotice("descricao") && (
+                <span className="rounded-full bg-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
+                  {fieldNotice("descricao")!.text}
+                </span>
+              )}
+            </span>
             <textarea
               value={finding.descricao ?? ""}
               onChange={(event) => onChange({ ...finding, descricao: event.target.value })}

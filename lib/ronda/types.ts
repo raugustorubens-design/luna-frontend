@@ -33,6 +33,11 @@ export const FLAG_LABELS: Record<string, string> = {
   passivo_trabalhista: "Passivo Trabalhista",
 };
 
+/** Título de exibição de um achado — mesma regra usada em `FindingCard` e agora também no aviso de campos faltando do wizard, centralizada aqui para as duas leituras não divergirem. */
+export function findingTitle(finding: Pick<RondaFinding, "flagId">): string {
+  return (finding.flagId && FLAG_LABELS[finding.flagId]) || "Achado manual";
+}
+
 export const RISK_STATES = ["nao_avaliado", "identificado", "inexistente"] as const;
 export type RiskState = (typeof RISK_STATES)[number];
 
@@ -217,4 +222,51 @@ export function metadataComplete(metadata: RondaMetadata): boolean {
 /** Achados ainda "não avaliado" — usado tanto para desenhar a lista de pendências quanto para travar o botão "Concluir ronda" (ADR-021: "não avaliado bloqueia conclusão"). Raro na lista dinâmica (achados só nascem já `identificado`), mas mantido como defesa — mesma regra que o backend replica (`validateRondaSubmission`). */
 export function pendingFindings(findings: RondaFinding[]): RondaFinding[] {
   return findings.filter((finding) => finding.estado === "nao_avaliado");
+}
+
+/**
+ * Espelha `requiredWhenIdentified()` de `luna-core/src/convergia/ronda/validation.ts`
+ * — mesmo nome, mesma regra, do lado do cliente. Achado do gate divergente
+ * de 17/08/2026: o wizard só travava em `pendingFindings` (achado
+ * "não avaliado"), nunca nesses quatro campos — a ronda passava no cliente,
+ * entrava na fila e o servidor recusava com 422, sem ninguém saber o quê
+ * faltava até este espelho existir.
+ *
+ * Foto fica de fora, deliberadamente — igual ao servidor. Não é "ainda não
+ * espelhado", é a regra: o comentário do lado do servidor registra que
+ * exigir foto foi correção de usabilidade sobre a ferramenta real da
+ * Manserv. Não reintroduza aqui.
+ */
+export type MissingField = "departamento" | "classificacao" | "gravidade" | "descricao";
+
+export const MISSING_FIELD_LABELS: Record<MissingField, string> = {
+  departamento: "departamento",
+  classificacao: "classificação",
+  gravidade: "gravidade",
+  descricao: "descrição",
+};
+
+export function missingRequiredWhenIdentified(f: RondaFinding): MissingField[] {
+  if (f.estado !== "identificado") return [];
+  const out: MissingField[] = [];
+  if (!f.departamento) out.push("departamento");
+  if (!f.classificacao) out.push("classificacao");
+  if (!f.gravidade) out.push("gravidade");
+  if (!f.descricao) out.push("descricao");
+  return out;
+}
+
+export function findingsWithMissingFields(fs: RondaFinding[]) {
+  return fs.map((f) => ({ finding: f, missing: missingRequiredWhenIdentified(f) })).filter((r) => r.missing.length > 0);
+}
+
+/**
+ * Um problema do array `issues` que o 422 de validação devolve
+ * (`{"error":"...","issues":[{"path":"achados.0.id","message":"Required"}]}`,
+ * confirmado no `BUILDER.md` de 15/08). `path` é contrato do servidor —
+ * `lib/ronda/issues.ts` é quem sabe traduzi-lo, tolerando formato que muda.
+ */
+export interface ValidationIssue {
+  path: string;
+  message: string;
 }

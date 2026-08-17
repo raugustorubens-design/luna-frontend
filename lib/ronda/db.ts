@@ -10,7 +10,7 @@
  * a superfície usada aqui é pequena o bastante (dois stores, chave simples)
  * para não justificar uma dependência nova só para isto.
  */
-import type { RondaSubmission, RondaMetadata, RondaFinding, RondaClosing, SuggestionRecord } from "./types";
+import type { RondaSubmission, RondaMetadata, RondaFinding, RondaClosing, SuggestionRecord, ValidationIssue } from "./types";
 
 const DB_NAME = "luna-ronda";
 const DB_VERSION = 4;
@@ -89,6 +89,16 @@ export interface QueueItem {
   syncedAt?: string;
   serverRondaId?: string;
   lastError?: string;
+  /**
+   * Gate divergente de 17/08/2026: os problemas que o 422 devolveu, gravados
+   * junto do item "invalid" — antes só `lastError` (a mensagem genérica)
+   * sobrevivia, e a tela de edição não tinha como acender o campo certo no
+   * achado certo. Campo novo, não store novo — nenhuma migração de schema é
+   * necessária (`IDBObjectStore` não valida forma de registro); item antigo
+   * sem `issues` continua um `QueueItem` válido e cai no caminho de mensagem
+   * genérica em `ronda-editor.tsx`.
+   */
+  issues?: ValidationIssue[];
   attempts: number;
 }
 
@@ -248,11 +258,12 @@ export async function getQueueItem(localId: string): Promise<QueueItem | null> {
  *
  * Voltar para `pending` é o ponto do método: editar um item que o servidor
  * rejeitou (`invalid`) só tem sentido se a edição o recolocar na fila de
- * reenvio. `lastError` é limpo junto — o erro descrevia o payload antigo,
- * mantê-lo faria a tela acusar um problema que a edição pode ter resolvido.
+ * reenvio. `lastError` e `issues` são limpos junto — descreviam o payload
+ * antigo, mantê-los faria a tela acusar um problema que a edição pode ter
+ * resolvido.
  */
 export async function updateQueueSubmission(localId: string, submission: RondaSubmission): Promise<void> {
-  await updateQueueItem(localId, { submission, status: "pending", lastError: undefined });
+  await updateQueueItem(localId, { submission, status: "pending", lastError: undefined, issues: undefined });
 }
 
 /**

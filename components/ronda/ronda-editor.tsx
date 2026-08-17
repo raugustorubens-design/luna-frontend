@@ -1,13 +1,38 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getRonda, patchRonda, RondaSubmitError } from "@/lib/ronda/api-client";
 import { deleteQueueItem, getQueueItem, updateQueueSubmission, type QueueStatus } from "@/lib/ronda/db";
 import { trySyncPendingRondas } from "@/lib/ronda/queue";
-import { duplicateFinding, type RondaFinding, type RondaMetadata } from "@/lib/ronda/types";
+import { duplicateFinding, findingsWithMissingFields, type MissingField, type RondaFinding, type RondaMetadata, type ValidationIssue } from "@/lib/ronda/types";
 import { ENTRY_STATUS_LABEL } from "@/lib/ronda/list-view";
+import { classifyQueueRejection, parseIssuePath } from "@/lib/ronda/issues";
 import { FindingCard } from "./finding-card";
+
+/**
+ * Separa as issues do 422 em "por achado" (viram destaque de campo no
+ * `FindingCard` correspondente) e "sem achado" (metadados, `id` que não bate
+ * com nenhum achado carregado — mostradas à parte, com o texto do servidor,
+ * nunca só uma contagem). Pura, exportada só para teste; não depende de
+ * estado do componente além do que recebe por parâmetro.
+ */
+function splitIssues(
+  issues: ValidationIssue[] | undefined,
+  findingIds: ReadonlySet<string>,
+): { byFinding: Record<string, Partial<Record<MissingField, string>>>; unmapped: ValidationIssue[] } {
+  const byFinding: Record<string, Partial<Record<MissingField, string>>> = {};
+  const unmapped: ValidationIssue[] = [];
+  for (const issue of issues ?? []) {
+    const parsed = parseIssuePath(issue.path);
+    if (parsed && findingIds.has(parsed.findingId)) {
+      (byFinding[parsed.findingId] ??= {})[parsed.field] = issue.message;
+    } else {
+      unmapped.push(issue);
+    }
+  }
+  return { byFinding, unmapped };
+}
 
 /**
  * Edição de uma ronda, das duas origens que a lista agora mostra:
@@ -42,12 +67,35 @@ function Editor({ source }: { source: EditorSource }) {
   const [incluirGraficoResumo, setIncluirGraficoResumo] = useState(false);
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
   const [queueError, setQueueError] = useState<string | undefined>(undefined);
+  const [queueIssues, setQueueIssues] = useState<ValidationIssue[] | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   const isQueue = source.kind === "queue";
+
+  // Gate divergente de 17/08/2026 (Etapa 2). `byFinding` alimenta o
+  // `serverIssues` de cada `FindingCard`; `unmapped` é o que não bate com
+  // nenhum achado carregado (metadados, id que já não existe) — mostrado à
+  // parte, texto do servidor, nunca só uma contagem.
+  const { byFinding: issuesByFinding, unmapped: unmappedIssues } = useMemo(
+    () => splitIssues(queueIssues, new Set(findings.map((f) => f.id))),
+    [queueIssues, findings],
+  );
+
+  /**
+   * Etapa 3 — qual das duas mensagens mostrar. Com `issues` guardadas
+   * (rejeição depois desta correção), a classificação vem delas direto. Sem
+   * `issues` (Etapa 4, item que já estava preso antes desta mudança), cai
+   * pro gate do cliente: se há achado com campo obrigatório vazio agora, dá
+   * pra corrigir na tela mesmo sem o servidor ter dito o quê — é essa rede
+   * de segurança que resolve o caso preso sem esperar reenvio nenhum.
+   */
+  const recoverable = useMemo(() => {
+    if (queueIssues && queueIssues.length > 0) return classifyQueueRejection(queueIssues) === "recoverable";
+    return findingsWithMissingFields(findings).length > 0;
+  }, [queueIssues, findings]);
 
   const load = useCallback(async () => {
     if (source.kind === "server") {
@@ -66,6 +114,7 @@ function Editor({ source }: { source: EditorSource }) {
     setIncluirGraficoResumo(item.submission.encerramento.incluirGraficoResumo);
     setQueueStatus(item.status);
     setQueueError(item.lastError);
+    setQueueIssues(item.issues);
   }, [source]);
 
   useEffect(() => {
@@ -99,6 +148,7 @@ function Editor({ source }: { source: EditorSource }) {
         });
         setQueueStatus("pending");
         setQueueError(undefined);
+        setQueueIssues(undefined);
         // Salvar aqui devolveu o item pra fila; tentar enviar na sequência é
         // o que fecha o ciclo — sem isto, a pessoa corrige uma ronda
         // rejeitada e ela fica parada até o próximo evento de rede.
@@ -152,11 +202,42 @@ function Editor({ source }: { source: EditorSource }) {
 
       <main className="ronda-scroll-pad min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
         <div className="flex flex-col gap-3">
+          {/*
+            Gate divergente de 17/08/2026 (Etapa 3). `queueError` (`lastError`)
+            já é a mensagem definitiva quando `queueIssues` existe: `queue.ts`
+            monta esse texto escolhendo a variante certa (recuperável ou não)
+            na hora da rejeição — não há nada a acrescentar, e acrescentar
+            duplicaria a instrução.
+
+            A instrução extra abaixo só aparece na ausência de `queueIssues`
+            — Etapa 4, rede de segurança para um item que ficou "invalid"
+            *antes* desta correção existir: `lastError` daquele registro
+            ainda carrega o texto antigo contraditório ("refaça e descarte"
+            preso ao lado do que deveria dizer "corrija"), e o gate do
+            cliente (Etapa 1, `recoverable` computado sobre os achados já
+            carregados) é quem sabe que dá para corrigir mesmo sem o
+            servidor ter confirmado de novo.
+          */}
           {isQueue && queueError && (
             <div className="rounded border border-orange-500/40 bg-orange-500/10 p-2.5 text-xs text-orange-800 dark:text-orange-300">
               <p className="font-medium">O servidor recusou esta ronda:</p>
               <p className="mt-1">{queueError}</p>
-              <p className="mt-1">Corrija o que estiver faltando abaixo e salve — ela volta pra fila e é reenviada.</p>
+              {recoverable && (!queueIssues || queueIssues.length === 0) && (
+                <p className="mt-1 font-medium">Corrija os campos indicados abaixo e salve — ela volta pra fila e é reenviada.</p>
+              )}
+            </div>
+          )}
+
+          {unmappedIssues.length > 0 && (
+            <div className="rounded border border-orange-500/40 bg-orange-500/10 p-2.5 text-xs text-orange-800 dark:text-orange-300">
+              <p className="font-medium">Outros problemas apontados pelo servidor:</p>
+              <ul className="mt-1 list-disc pl-4">
+                {unmappedIssues.map((issue, index) => (
+                  <li key={`${issue.path}-${index}`}>
+                    {issue.path}: {issue.message}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
@@ -182,6 +263,7 @@ function Editor({ source }: { source: EditorSource }) {
               onChange={updateFinding}
               onDuplicate={(f) => setFindings((current) => [...current, duplicateFinding(f)])}
               onRemove={isQueue ? (findingId) => setFindings((current) => current.filter((f) => f.id !== findingId)) : undefined}
+              serverIssues={issuesByFinding[finding.id]}
             />
           ))}
 
@@ -200,7 +282,15 @@ function Editor({ source }: { source: EditorSource }) {
             <p className="text-xs text-emerald-500">{isQueue ? "Salvo neste aparelho e recolocado na fila de envio." : "Alterações salvas."}</p>
           )}
 
-          {isQueue && (
+          {/*
+            Etapa 3: escondido especificamente quando o item está "invalid" e
+            é recuperável — oferecer descartar aqui é oferecer perda de dado
+            (as fotos daquele achado só existem neste aparelho) para um caso
+            que a própria tela já sabe corrigir. Nos demais estados da fila
+            (pending/error/syncing), descartar continua uma ação normal,
+            sempre disponível.
+          */}
+          {isQueue && !(queueStatus === "invalid" && recoverable) && (
             <button type="button" onClick={() => void handleDiscard()} className="self-start text-xs text-red-500 underline dark:text-red-400">
               Descartar esta ronda do aparelho
             </button>
