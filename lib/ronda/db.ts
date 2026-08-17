@@ -10,7 +10,7 @@
  * a superfície usada aqui é pequena o bastante (dois stores, chave simples)
  * para não justificar uma dependência nova só para isto.
  */
-import type { RondaSubmission, RondaMetadata, RondaFinding, RondaClosing, SuggestionRecord } from "./types";
+import type { RondaSubmission, RondaMetadata, RondaFinding, RondaClosing, SuggestionRecord, ValidationIssue } from "./types";
 
 const DB_NAME = "luna-ronda";
 const DB_VERSION = 4;
@@ -89,6 +89,16 @@ export interface QueueItem {
   syncedAt?: string;
   serverRondaId?: string;
   lastError?: string;
+  /**
+   * `issues` do 422 que moveu este item pra `"invalid"` (ver `RondaSubmitError.issues`,
+   * `lib/ronda/api-client.ts`) — campo novo no registro existente, não um
+   * store novo (achado de campo, 17/08/2026: o gate do cliente divergia do
+   * servidor, e a tela de edição não tinha como apontar qual campo faltava).
+   * Migração aditiva: um item gravado antes desta mudança simplesmente não
+   * tem `issues` — `isRecoverableRejection(undefined)` trata isso como não
+   * recuperável, mesmo caminho de mensagem genérica que já existia.
+   */
+  issues?: ValidationIssue[];
   attempts: number;
 }
 
@@ -248,11 +258,12 @@ export async function getQueueItem(localId: string): Promise<QueueItem | null> {
  *
  * Voltar para `pending` é o ponto do método: editar um item que o servidor
  * rejeitou (`invalid`) só tem sentido se a edição o recolocar na fila de
- * reenvio. `lastError` é limpo junto — o erro descrevia o payload antigo,
- * mantê-lo faria a tela acusar um problema que a edição pode ter resolvido.
+ * reenvio. `lastError`/`issues` são limpos junto — descreviam o payload
+ * antigo, mantê-los faria a tela acusar um problema que a edição pode ter
+ * resolvido.
  */
 export async function updateQueueSubmission(localId: string, submission: RondaSubmission): Promise<void> {
-  await updateQueueItem(localId, { submission, status: "pending", lastError: undefined });
+  await updateQueueItem(localId, { submission, status: "pending", lastError: undefined, issues: undefined });
 }
 
 /**

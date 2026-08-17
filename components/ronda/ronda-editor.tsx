@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getRonda, patchRonda, RondaSubmitError } from "@/lib/ronda/api-client";
 import { deleteQueueItem, getQueueItem, updateQueueSubmission, type QueueStatus } from "@/lib/ronda/db";
 import { trySyncPendingRondas } from "@/lib/ronda/queue";
-import { duplicateFinding, type RondaFinding, type RondaMetadata } from "@/lib/ronda/types";
+import { groupIssuesByFinding, isRecoverableRejection } from "@/lib/ronda/issues";
+import { duplicateFinding, findingsWithMissingFields, type RondaFinding, type RondaMetadata, type ValidationIssue } from "@/lib/ronda/types";
 import { ENTRY_STATUS_LABEL } from "@/lib/ronda/list-view";
 import { FindingCard } from "./finding-card";
 
@@ -42,12 +43,47 @@ function Editor({ source }: { source: EditorSource }) {
   const [incluirGraficoResumo, setIncluirGraficoResumo] = useState(false);
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
   const [queueError, setQueueError] = useState<string | undefined>(undefined);
+  /**
+   * `issues` do 422 que rejeitou esta ronda — carregado do item de fila
+   * (`QueueItem.issues`, Etapa 4: destrava o item que já está preso hoje) ou
+   * de uma tentativa de salvar que acabou de falhar (`kind: "server"`,
+   * `patchRonda` lança com `.issues` na hora). Traduzido por
+   * `groupIssuesByFinding` em destaque por campo no `FindingCard`
+   * correspondente + lista genérica pro que não mapeia pra nenhum achado
+   * carregado (formato antigo, id que já não existe mais).
+   */
+  const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   const isQueue = source.kind === "queue";
+  const findingIds = useMemo(() => new Set(findings.map((f) => f.id)), [findings]);
+  const { byFinding: fieldIssuesByFinding, unmapped: unmappedIssues } = useMemo(
+    () => groupIssuesByFinding(issues, findingIds),
+    [issues, findingIds],
+  );
+  /**
+   * Etapa 3 (achado de campo 17/08/2026): "refaça e descarte" só faz sentido
+   * pra rejeição genuinamente irrecuperável (formato pré-migração, sem `id`
+   * de achado). Uma rejeição por campo obrigatório faltando é corrigível na
+   * própria tela — oferecer "descartar" aí seria oferecer perda de dado
+   * (fotos que só existem neste aparelho).
+   *
+   * Com `issues` guardada (item ficou "invalid" depois desta mudança),
+   * `isRecoverableRejection` decide direto. Sem ela (Etapa 4: o item que já
+   * está preso hoje ficou "invalid" antes desta mudança, `lib/ronda/queue.ts`
+   * só passou a guardar `issues` agora) a Etapa 1 cobre: o mesmo gate que
+   * acende os campos no `FindingCard` abaixo (`findingsWithMissingFields`,
+   * roda sobre o conteúdo já carregado, sem depender do servidor) também
+   * decide a mensagem — se há achado identificado com campo faltando, é
+   * recuperável, ponto final; sem nenhum achado assim, não há o que
+   * corrigir nesta tela, então trata como irrecuperável.
+   */
+  const clientMissingFields = useMemo(() => findingsWithMissingFields(findings), [findings]);
+  const invalidRecoverable =
+    queueStatus === "invalid" && (issues.length > 0 ? isRecoverableRejection(issues) : clientMissingFields.length > 0);
 
   const load = useCallback(async () => {
     if (source.kind === "server") {
@@ -66,6 +102,7 @@ function Editor({ source }: { source: EditorSource }) {
     setIncluirGraficoResumo(item.submission.encerramento.incluirGraficoResumo);
     setQueueStatus(item.status);
     setQueueError(item.lastError);
+    setIssues(item.issues ?? []);
   }, [source]);
 
   useEffect(() => {
@@ -91,6 +128,8 @@ function Editor({ source }: { source: EditorSource }) {
     try {
       if (source.kind === "server") {
         await patchRonda(source.rondaId, { achados: findings, encerramento: { observacoesGerais } });
+        // Aceito pelo servidor — qualquer issue de uma tentativa anterior já não vale mais.
+        setIssues([]);
       } else {
         await updateQueueSubmission(source.localId, {
           metadata,
@@ -99,6 +138,7 @@ function Editor({ source }: { source: EditorSource }) {
         });
         setQueueStatus("pending");
         setQueueError(undefined);
+        setIssues([]);
         // Salvar aqui devolveu o item pra fila; tentar enviar na sequência é
         // o que fecha o ciclo — sem isto, a pessoa corrige uma ronda
         // rejeitada e ela fica parada até o próximo evento de rede.
@@ -107,6 +147,7 @@ function Editor({ source }: { source: EditorSource }) {
       setSaved(true);
     } catch (err) {
       setSaveError(err instanceof RondaSubmitError ? err.message : "Falha ao salvar a edição.");
+      if (err instanceof RondaSubmitError && err.issues) setIssues(err.issues);
     } finally {
       setSaving(false);
     }
@@ -152,11 +193,45 @@ function Editor({ source }: { source: EditorSource }) {
 
       <main className="ronda-scroll-pad min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
         <div className="flex flex-col gap-3">
-          {isQueue && queueError && (
+          {/*
+            Duas situações que pareciam a mesma coisa (achado de campo,
+            17/08/2026): a rejeição do servidor podia ser um formato antigo,
+            genuinamente irrecuperável nesta tela ("refaça e descarte"), ou
+            só campo obrigatório faltando, corrigível aqui mesmo ("corrija
+            abaixo e salve"). Mostrar as duas instruções juntas — o que
+            acontecia antes — significava mandar descartar algo que dava pra
+            salvar. `invalidRecoverable` (lib/ronda/issues.ts) decide qual
+            das duas aparece; nunca as duas.
+          */}
+          {isQueue && queueStatus === "invalid" && queueError && invalidRecoverable && (
+            <div className="rounded border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-800 dark:text-amber-300">
+              <p className="font-medium">O servidor recusou esta ronda: faltam campos obrigatórios.</p>
+              <p className="mt-1">Corrija o que estiver marcado abaixo e salve — ela volta pra fila e é reenviada.</p>
+            </div>
+          )}
+          {isQueue && queueStatus === "invalid" && queueError && !invalidRecoverable && (
             <div className="rounded border border-orange-500/40 bg-orange-500/10 p-2.5 text-xs text-orange-800 dark:text-orange-300">
               <p className="font-medium">O servidor recusou esta ronda:</p>
               <p className="mt-1">{queueError}</p>
-              <p className="mt-1">Corrija o que estiver faltando abaixo e salve — ela volta pra fila e é reenviada.</p>
+              <p className="mt-1">Este registro está num formato que não dá pra recuperar nesta tela. Refaça a ronda pelo formulário e descarte este item abaixo.</p>
+            </div>
+          )}
+          {isQueue && queueStatus === "error" && queueError && (
+            <div className="rounded border border-orange-500/40 bg-orange-500/10 p-2.5 text-xs text-orange-800 dark:text-orange-300">
+              <p className="font-medium">Falha ao enviar esta ronda:</p>
+              <p className="mt-1">{queueError}</p>
+            </div>
+          )}
+
+          {/* Issues que não mapeiam pra um achado carregado (id que já não existe mais, campo fora dos 4 conhecidos) — texto real do servidor, nunca só a contagem. Omitido no formato antigo (banner acima já cobre o caso). */}
+          {unmappedIssues.length > 0 && !(isQueue && queueStatus === "invalid" && !invalidRecoverable) && (
+            <div className="rounded border border-amber-400/40 bg-amber-400/10 p-2.5 text-xs text-amber-800 dark:text-amber-300">
+              <p className="font-medium">O servidor também apontou:</p>
+              <ul className="mt-1 list-disc pl-4">
+                {unmappedIssues.map((issue, index) => (
+                  <li key={`${issue.path}-${index}`}>{issue.message}</li>
+                ))}
+              </ul>
             </div>
           )}
 
@@ -182,6 +257,7 @@ function Editor({ source }: { source: EditorSource }) {
               onChange={updateFinding}
               onDuplicate={(f) => setFindings((current) => [...current, duplicateFinding(f)])}
               onRemove={isQueue ? (findingId) => setFindings((current) => current.filter((f) => f.id !== findingId)) : undefined}
+              fieldIssues={fieldIssuesByFinding.get(finding.id)}
             />
           ))}
 
@@ -200,7 +276,14 @@ function Editor({ source }: { source: EditorSource }) {
             <p className="text-xs text-emerald-500">{isQueue ? "Salvo neste aparelho e recolocado na fila de envio." : "Alterações salvas."}</p>
           )}
 
-          {isQueue && (
+          {/*
+            Escondido quando a rejeição é recuperável (Etapa 3): oferecer
+            "descartar" pra uma ronda que só precisa de campo preenchido é
+            oferecer perda de dado — as fotos deste achado só existem neste
+            aparelho. Volta a aparecer assim que a edição salvar com sucesso
+            (`invalidRecoverable` depende de `queueStatus === "invalid"`).
+          */}
+          {isQueue && !invalidRecoverable && (
             <button type="button" onClick={() => void handleDiscard()} className="self-start text-xs text-red-500 underline dark:text-red-400">
               Descartar esta ronda do aparelho
             </button>

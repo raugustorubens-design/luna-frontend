@@ -8,10 +8,13 @@ import {
   emptyClosing,
   metadataComplete,
   pendingFindings,
+  findingsWithMissingFields,
+  findingTitle,
   newFinding,
   duplicateFinding,
   diffSuggestionFields,
   FLAG_LABELS,
+  MISSING_FIELD_LABELS,
   type RondaMetadata,
   type RondaFinding,
   type RondaClosing,
@@ -28,6 +31,12 @@ import { FindingCard } from "./finding-card";
 import { ThemeToggle } from "./theme-toggle";
 
 type Step = "A" | "B" | "C" | "done";
+
+/** "a, b e c" — só usado para nomear os campos faltando no aviso da Etapa C, nunca uma contagem sozinha. */
+function joinPt(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} e ${items[items.length - 1]}`;
+}
 
 /**
  * Etapa B (achado dinâmico — revisão de arquitetura, Decisões 1-3): a
@@ -152,7 +161,16 @@ export function RondaWizard() {
   }, []);
 
   const pending = useMemo(() => pendingFindings(findings), [findings]);
-  const canConclude = pending.length === 0;
+  /**
+   * Achado de campo 17/08/2026: `pendingFindings` sozinho só barrava
+   * "não avaliado" — nunca conferia os 4 campos que `requiredWhenIdentified`
+   * exige no servidor, então "Concluir ronda" habilitava com achado
+   * identificado e vazio, e o 422 só aparecia depois do envio, já na fila.
+   * `findingsWithMissingFields` espelha a regra do servidor aqui, antes do
+   * envio.
+   */
+  const missingFieldFindings = useMemo(() => findingsWithMissingFields(findings), [findings]);
+  const canConclude = pending.length === 0 && missingFieldFindings.length === 0;
 
   /**
    * `data` fica de fora de propósito: `emptyMetadata()` já nasce com a data
@@ -470,7 +488,21 @@ export function RondaWizard() {
 
             {!canConclude && (
               <div className="rounded border border-amber-400/40 bg-amber-400/40 p-3 text-xs text-amber-900 dark:bg-amber-400/10 dark:text-amber-300">
-                <p className="mb-1 font-medium">Ainda há {pending.length} achado(s) marcado(s) como &quot;não avaliado&quot; — revise antes de concluir.</p>
+                {pending.length > 0 && (
+                  <p className="mb-1 font-medium">Ainda há {pending.length} achado(s) marcado(s) como &quot;não avaliado&quot; — revise antes de concluir.</p>
+                )}
+                {missingFieldFindings.length > 0 && (
+                  <div className={pending.length > 0 ? "mt-2" : undefined}>
+                    <p className="mb-1 font-medium">Faltam campos obrigatórios:</p>
+                    <ul className="list-disc pl-4">
+                      {missingFieldFindings.map(({ finding, missing }) => (
+                        <li key={finding.id}>
+                          {findingTitle(finding)} — falta {joinPt(missing.map((field) => MISSING_FIELD_LABELS[field]))}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
           </div>

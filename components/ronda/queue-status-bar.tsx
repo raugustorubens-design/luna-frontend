@@ -1,6 +1,8 @@
 "use client";
 
 import type { QueueCounts, QueueItem } from "@/lib/ronda/db";
+import { isRecoverableRejection } from "@/lib/ronda/issues";
+import { findingsWithMissingFields } from "@/lib/ronda/types";
 
 /**
  * "Usuário precisa conseguir ver, na própria tela, quantos achados estão
@@ -67,26 +69,38 @@ export function QueueStatusBar({
         <div className="flex flex-col gap-2 border-t border-orange-400/30 bg-orange-400/10 px-4 py-2 text-orange-900 dark:text-orange-200">
           <p>
             {counts.invalid} registro{counts.invalid === 1 ? "" : "s"} desta fila {counts.invalid === 1 ? "foi" : "foram"} rejeitado
-            {counts.invalid === 1 ? "" : "s"} pelo servidor e não {counts.invalid === 1 ? "vai" : "vão"} se resolver tentando de novo — provavelmente
-            {" "}foi{counts.invalid === 1 ? "" : "am"} salvo{counts.invalid === 1 ? "" : "s"} num formato antigo. Refaça a ronda pelo formulário e depois
-            descarte o item abaixo.
+            {counts.invalid === 1 ? "" : "s"} pelo servidor e não {counts.invalid === 1 ? "vai" : "vão"} se resolver tentando de novo — abra a ronda em
+            {" "}&quot;Ver rondas anteriores&quot; pra ver o motivo. Se for campo faltando, corrija e salve ali; se for formato antigo, refaça e descarte.
           </p>
-          {invalidItems.map((item) => (
-            <div key={item.localId} className="flex items-center justify-between gap-2 rounded border border-orange-400/40 bg-black/5 px-2 py-1 dark:bg-black/20">
-              <span className="truncate">
-                {item.submission.metadata.titulo || "(sem título)"} — {item.submission.metadata.data} — {item.lastError ?? "Rejeitado pelo servidor."}
-              </span>
-              {onDiscardInvalid && (
-                <button
-                  type="button"
-                  onClick={() => onDiscardInvalid(item.localId)}
-                  className="shrink-0 rounded border border-orange-400/50 px-2 py-1 text-[11px] hover:border-orange-500"
-                >
-                  Descartar
-                </button>
-              )}
-            </div>
-          ))}
+          {invalidItems.map((item) => {
+            // Etapa 3 (achado de campo 17/08/2026): "Descartar" só é oferecido pra
+            // rejeição genuinamente irrecuperável — pra campo obrigatório faltando,
+            // a ronda é corrigível na tela de edição, e descartar aqui seria
+            // oferecer perda de dado. Sem `issues` guardada (item que ficou
+            // "invalid" antes desta mudança — o caso real preso hoje), cai pro
+            // mesmo gate do cliente sobre o conteúdo já salvo (mesmo fallback de
+            // `ronda-editor.tsx`), sem depender do servidor.
+            const recoverable =
+              item.issues && item.issues.length > 0
+                ? isRecoverableRejection(item.issues)
+                : findingsWithMissingFields(item.submission.achados).length > 0;
+            return (
+              <div key={item.localId} className="flex items-center justify-between gap-2 rounded border border-orange-400/40 bg-black/5 px-2 py-1 dark:bg-black/20">
+                <span className="truncate">
+                  {item.submission.metadata.titulo || "(sem título)"} — {item.submission.metadata.data} — {item.lastError ?? "Rejeitado pelo servidor."}
+                </span>
+                {onDiscardInvalid && !recoverable && (
+                  <button
+                    type="button"
+                    onClick={() => onDiscardInvalid(item.localId)}
+                    className="shrink-0 rounded border border-orange-400/50 px-2 py-1 text-[11px] hover:border-orange-500"
+                  >
+                    Descartar
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

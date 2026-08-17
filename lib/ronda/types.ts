@@ -61,6 +61,23 @@ export const FINDING_SEVERITY_LABELS: Record<FindingSeverity, string> = {
   critica: "Crítica",
 };
 
+/** Os 4 campos que `requiredWhenIdentified` (servidor e cliente, ver abaixo) exige quando `estado === "identificado"`. Foto nunca entra aqui, em nenhum estado. */
+export const MISSING_FIELDS = ["departamento", "classificacao", "gravidade", "descricao"] as const;
+export type MissingField = (typeof MISSING_FIELDS)[number];
+
+export const MISSING_FIELD_LABELS: Record<MissingField, string> = {
+  departamento: "departamento",
+  classificacao: "classificação",
+  gravidade: "gravidade",
+  descricao: "descrição",
+};
+
+/** Um item de `RondaSubmitError.issues` — mesma forma de `ValidationIssue` em `luna-core/src/convergia/contracts.ts` (cópia deliberada, mesma nota do topo do arquivo). */
+export interface ValidationIssue {
+  path: string;
+  message: string;
+}
+
 export interface RondaPhoto {
   /** Base64, sem prefixo `data:` — mesmo padrão do backend (`convergia_visual_templates`). */
   dataBase64: string;
@@ -217,4 +234,35 @@ export function metadataComplete(metadata: RondaMetadata): boolean {
 /** Achados ainda "não avaliado" — usado tanto para desenhar a lista de pendências quanto para travar o botão "Concluir ronda" (ADR-021: "não avaliado bloqueia conclusão"). Raro na lista dinâmica (achados só nascem já `identificado`), mas mantido como defesa — mesma regra que o backend replica (`validateRondaSubmission`). */
 export function pendingFindings(findings: RondaFinding[]): RondaFinding[] {
   return findings.filter((finding) => finding.estado === "nao_avaliado");
+}
+
+/** Rótulo de exibição de um achado — mesma regra usada no cabeçalho do `FindingCard` e na lista de pendências do wizard, extraída aqui pra não divergir entre os dois lugares. */
+export function findingTitle(finding: RondaFinding): string {
+  return (finding.flagId && FLAG_LABELS[finding.flagId]) || "Achado manual";
+}
+
+/**
+ * Espelha `requiredWhenIdentified` de `luna-core/src/convergia/ronda/validation.ts`
+ * — mesmo nome, mesma regra: um achado `identificado` exige departamento,
+ * classificação, gravidade e descrição. Existe porque o gate do wizard
+ * (`pendingFindings`, acima) só barrava achados "não avaliado" — nunca
+ * verificava esses quatro campos, então "Concluir ronda" habilitava mesmo
+ * com um achado identificado e vazio, e o 422 só aparecia depois do envio
+ * (achado de campo, 17/08/2026). Foto fica deliberadamente fora desta lista
+ * em qualquer estado — nunca é exigida, mesma decisão do servidor (correção
+ * de usabilidade sobre a ferramenta real da Manserv).
+ */
+export function missingRequiredWhenIdentified(finding: RondaFinding): MissingField[] {
+  if (finding.estado !== "identificado") return [];
+  const missing: MissingField[] = [];
+  if (!finding.departamento) missing.push("departamento");
+  if (!finding.classificacao) missing.push("classificacao");
+  if (!finding.gravidade) missing.push("gravidade");
+  if (!finding.descricao) missing.push("descricao");
+  return missing;
+}
+
+/** Todo achado da ronda que ainda tem campo obrigatório faltando, com a lista de quais — usado pelo gate de "Concluir ronda" e pelo aviso que nomeia achado e campos (nunca só uma contagem). */
+export function findingsWithMissingFields(findings: RondaFinding[]): { finding: RondaFinding; missing: MissingField[] }[] {
+  return findings.map((finding) => ({ finding, missing: missingRequiredWhenIdentified(finding) })).filter((entry) => entry.missing.length > 0);
 }

@@ -2,17 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  FLAG_LABELS,
   RISK_STATES,
   RISK_STATE_LABELS,
   FINDING_CLASSIFICATIONS,
   FINDING_CLASSIFICATION_LABELS,
   FINDING_SEVERITIES,
   FINDING_SEVERITY_LABELS,
+  findingTitle,
+  missingRequiredWhenIdentified,
   type RondaFinding,
   type RondaPhoto,
   type RiskState,
   type FindingClassification,
+  type MissingField,
 } from "@/lib/ronda/types";
 import { compressPhoto, photoToBase64 } from "@/lib/ronda/photo";
 import { saveOriginalPhoto } from "@/lib/ronda/db";
@@ -40,6 +42,13 @@ const CLASSIFICATION_FILL_CLASS: Record<FindingClassification, string> = {
   nao_conformidade: "border-transparent bg-[#C62828] text-white",
 };
 
+/** Mesmo tratamento âmbar que a Fase 4 já usa para `camposIncertos` (badge de "IA não teve certeza") — reaproveitado aqui pra campo obrigatório vazio, texto real do servidor quando disponível (`fieldIssues`), genérico quando não (wizard, achado ainda não passou pelo servidor). */
+function RequiredFieldBadge({ message }: { message: string }) {
+  return (
+    <span className="rounded-full bg-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">{message}</span>
+  );
+}
+
 /**
  * Um card por achado (achado dinâmico — não mais um por categoria fixa, ver
  * `lib/ronda/types.ts`). O seletor de estado de 3 opções continua existindo
@@ -55,6 +64,7 @@ export function FindingCard({
   onDuplicate,
   onRemove,
   onSuggestionApplied,
+  fieldIssues,
 }: {
   finding: RondaFinding;
   onChange: (next: RondaFinding) => void;
@@ -64,6 +74,15 @@ export function FindingCard({
   onRemove?: (findingId: string) => void;
   /** Reporta pro chamador quais campos uma sugestão de foto (Fase 4) de fato preencheu, pra Parte 3 (correção humana vira aprendizado) comparar sugerido-vs-salvo na hora de concluir. */
   onSuggestionApplied?: (findingId: string, sugerido: Partial<RondaFinding>) => void;
+  /**
+   * Mensagem real do servidor por campo obrigatório faltando (`RondaSubmitError.issues`,
+   * traduzida por `parseIssuePath`/`groupIssuesByFinding` em `lib/ronda/issues.ts`)
+   * — usado pela tela de edição quando um item da fila voltou "invalid".
+   * Omitido (caso do wizard, achado de campo 17/08/2026): o card ainda
+   * acende os mesmos 4 campos, sozinho, a partir de `missingRequiredWhenIdentified`
+   * — só a mensagem some junto com o texto real do servidor.
+   */
+  fieldIssues?: Partial<Record<MissingField, string>>;
 }) {
   const [compressing, setCompressing] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
@@ -81,7 +100,9 @@ export function FindingCard({
     findingRef.current = finding;
   }, [finding]);
 
-  const title = (finding.flagId && FLAG_LABELS[finding.flagId]) || "Achado manual";
+  const title = findingTitle(finding);
+  /** Os campos ainda vazios de um achado "identificado" — mesma regra do servidor (`requiredWhenIdentified`), recalculada a cada render, então o destaque some assim que o campo é preenchido. */
+  const missingFields = new Set(missingRequiredWhenIdentified(finding));
 
   function setEstado(estado: RiskState) {
     if (estado === "identificado") {
@@ -309,8 +330,15 @@ export function FindingCard({
 
       {isIdentified && (
         <div className="mt-3 flex flex-col gap-3 border-t border-black/10 pt-3 dark:border-white/10">
-          <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
-            Departamento
+          <label
+            className={`flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400 ${
+              missingFields.has("departamento") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
+              Departamento
+              {missingFields.has("departamento") && <RequiredFieldBadge message={fieldIssues?.departamento ?? "Obrigatório — risco identificado"} />}
+            </span>
             <input
               type="text"
               value={finding.departamento ?? ""}
@@ -378,7 +406,7 @@ export function FindingCard({
 
           <div
             className={`flex flex-col gap-1.5 text-xs text-slate-600 dark:text-slate-400 ${
-              lowConfidenceFields.has("classificacao") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
+              lowConfidenceFields.has("classificacao") || missingFields.has("classificacao") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
             }`}
           >
             <span className="flex items-center gap-1.5">
@@ -388,6 +416,7 @@ export function FindingCard({
                   IA não teve certeza — revise
                 </span>
               )}
+              {missingFields.has("classificacao") && <RequiredFieldBadge message={fieldIssues?.classificacao ?? "Obrigatório — risco identificado"} />}
             </span>
             <div
               className="flex flex-wrap gap-2"
@@ -424,7 +453,7 @@ export function FindingCard({
 
           <label
             className={`flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400 ${
-              lowConfidenceFields.has("gravidade") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
+              lowConfidenceFields.has("gravidade") || missingFields.has("gravidade") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
             }`}
           >
             <span className="flex items-center gap-1.5">
@@ -434,6 +463,7 @@ export function FindingCard({
                   IA não teve certeza — revise
                 </span>
               )}
+              {missingFields.has("gravidade") && <RequiredFieldBadge message={fieldIssues?.gravidade ?? "Obrigatório — risco identificado"} />}
             </span>
             {/*
               `color-scheme` invertido de propósito em relação ao tema da
@@ -475,8 +505,15 @@ export function FindingCard({
           </label>
 
           {/* textarea nativa, sem componente customizado — teclado nativo aparece normalmente, o que garante ditado por voz de graça (ADR-021). */}
-          <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
-            Descrição
+          <label
+            className={`flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400 ${
+              missingFields.has("descricao") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
+              Descrição
+              {missingFields.has("descricao") && <RequiredFieldBadge message={fieldIssues?.descricao ?? "Obrigatório — risco identificado"} />}
+            </span>
             <textarea
               value={finding.descricao ?? ""}
               onChange={(event) => onChange({ ...finding, descricao: event.target.value })}

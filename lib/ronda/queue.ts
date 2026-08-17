@@ -6,6 +6,7 @@
  */
 import { listQueue, updateQueueItem, deleteQueueItem, discardRondaLocalCopies, type QueueItem } from "./db";
 import { submitRonda, RondaSubmitError } from "./api-client";
+import { isRecoverableRejection } from "./issues";
 
 let syncing = false;
 
@@ -91,6 +92,7 @@ export async function trySyncPendingRondas(onProgress?: (item: QueueItem) => voi
         });
       } catch (error) {
         const message = error instanceof RondaSubmitError ? error.message : error instanceof Error ? error.message : "Falha desconhecida ao enviar.";
+        const issues = error instanceof RondaSubmitError ? error.issues : undefined;
         // Achado real em produção: itens enfileirados antes da migração pra
         // achado dinâmico (categoria em vez de id/flagId) ficavam presos em
         // "error" e eram retentados pra sempre em todo reconecte/reabertura
@@ -98,11 +100,21 @@ export async function trySyncPendingRondas(onProgress?: (item: QueueItem) => voi
         // esses itens do loop de retry automático (ver isPermanentRejection).
         const permanent = isPermanentRejection(error);
         const nextStatus = permanent ? "invalid" : "error";
-        const nextMessage = permanent
-          ? `Este registro não pode ser reenviado automaticamente (rejeitado pelo servidor: ${message}). Refaça esta ronda e descarte este item da fila.`
-          : message;
-        await updateQueueItem(item.localId, { status: nextStatus, lastError: nextMessage, attempts: item.attempts + 1 });
-        onProgress?.({ ...item, status: nextStatus, lastError: nextMessage });
+        // Achado de campo de 17/08/2026: quando a rejeição é recuperável (só
+        // campo obrigatório faltando, `isRecoverableRejection`), a mensagem
+        // não pode instruir "descarte" — a tela de edição já mostra os
+        // campos certos acesos, e descartar aqui seria oferecer perda de
+        // dado (as fotos daquele achado só existem neste aparelho). "Refaça
+        // e descarte" fica reservado pro caso genuinamente irrecuperável
+        // (formato pré-migração, sem `id` de achado, ou sem `issues`
+        // registrada).
+        const nextMessage = !permanent
+          ? message
+          : isRecoverableRejection(issues)
+            ? `O servidor recusou esta ronda por campo(s) obrigatório(s) faltando (${message}). Corrija os campos indicados abaixo e salve — ela volta pra fila e é reenviada automaticamente.`
+            : `Este registro não pode ser reenviado automaticamente (rejeitado pelo servidor: ${message}). Refaça esta ronda e descarte este item da fila.`;
+        await updateQueueItem(item.localId, { status: nextStatus, lastError: nextMessage, issues, attempts: item.attempts + 1 });
+        onProgress?.({ ...item, status: nextStatus, lastError: nextMessage, issues });
         // Uma falha (ex. rede caiu de novo no meio da fila) não deve
         // impedir a tentativa dos outros itens pendentes — continua o loop
         // em vez de abortar tudo no primeiro erro.

@@ -1513,3 +1513,143 @@ cada ronda antiga listada ali e descartar o item.
 - Mudança no backend (`luna-core`) — a validação atual (exigir `id`) está
   correta pro contrato atual; decidido não "fazer o 422 sumir" mudando o
   que o servidor aceita.
+
+---
+
+## 2026-08-17 — Ronda presa em campo: gate do cliente divergia do servidor, mensagem de erro contraditória
+
+### Achado, com captura real
+
+Tela de edição em produção, 17/08 às 13:58 (Sylvamo — LOGISTICA MG, Turno B):
+o servidor recusou o reenvio de uma ronda (422, "6 problema(s)"), e a tela
+mostrava duas instruções contraditórias ao mesmo tempo — "Refaça esta ronda
+e descarte este item da fila" (texto fixo pro caso genuinamente irrecuperável,
+do fix de 15/08) ao lado de "Corrija o que estiver faltando abaixo e salve"
+(texto fixo sempre presente), sem nunca dizer **quais** eram os 6 problemas.
+
+### Causa raiz
+
+`luna-core/src/convergia/ronda/validation.ts` (`requiredWhenIdentified`) exige
+`departamento`/`classificacao`/`gravidade`/`descricao` em todo achado
+`identificado` — regra correta, não alterada. O gate do wizard
+(`pendingFindings`, `lib/ronda/types.ts`) só verificava achados
+`"nao_avaliado"`, nunca esses 4 campos: "Concluir ronda" habilitava com um
+achado identificado e vazio (achado real, na captura: "Risco identificado",
+Departamento vazio), a ronda subia, e só então o servidor recusava — divergência
+de gate entre cliente e servidor, não um bug do servidor.
+
+### O que mudou
+
+1. **`lib/ronda/types.ts`** — `missingRequiredWhenIdentified`/`findingsWithMissingFields`,
+   cópia deliberada de `requiredWhenIdentified` (mesmo nome, mesma regra, foto
+   deliberadamente fora, em nenhum estado). `findingTitle` extraído (era
+   duplicado inline em `FindingCard`).
+2. **`components/ronda/ronda-wizard.tsx`** — `canConclude` passa a exigir
+   também `findingsWithMissingFields(findings).length === 0`; o aviso da
+   Etapa C nomeia achado + campos faltando (nunca só uma contagem — ex.
+   "Achado manual — falta departamento, classificação, gravidade e descrição").
+3. **`components/ronda/finding-card.tsx`** — os 4 campos de um achado
+   `identificado` ganham o mesmo tratamento âmbar que a Fase 4 já usa para
+   `camposIncertos` (borda + badge) enquanto vazios; badge usa a mensagem real
+   do servidor quando disponível (`fieldIssues`, novo prop opcional), genérica
+   quando não (wizard, achado que ainda não passou pelo servidor). Recalculado
+   a cada render — o destaque some assim que o campo é preenchido, e um achado
+   duplicado (`+ Duplicar`, 15/08) herda a mesma checagem sem tratamento
+   especial, porque `missingRequiredWhenIdentified` roda sobre o conteúdo, não
+   sobre a origem do achado.
+4. **`lib/ronda/api-client.ts`** — `RondaSubmitError.issues` migrado pro tipo
+   compartilhado `ValidationIssue` (já existia como `{path,message}[]` inline;
+   sem mudança de comportamento).
+5. **`lib/ronda/db.ts`** — `QueueItem` ganha `issues?: ValidationIssue[]`
+   (campo novo, não store novo — migração aditiva; item gravado antes desta
+   mudança simplesmente não tem o campo).
+6. **`lib/ronda/issues.ts`** (novo) — `parseIssuePath` traduz
+   `achados.{id}.{campo}` → `{findingId, field}` (tolerante a formato
+   inesperado, nunca lança); `isRecoverableRejection` distingue rejeição
+   corrigível (toda issue num dos 4 campos conhecidos) de irrecuperável
+   (`achados.N.id`/"Required" do formato pré-migração, ou nenhuma issue
+   registrada); `groupIssuesByFinding` separa issues que mapeiam pra um achado
+   carregado das que não mapeiam (id inexistente, campo desconhecido).
+7. **`lib/ronda/queue.ts`** — `trySyncPendingRondas` agora guarda `issues` no
+   item "invalid" e constrói a mensagem certa pra cada caso: "corrija os
+   campos indicados abaixo e salve" (recuperável) nunca mais junto de "refaça
+   e descarte" (irrecuperável) — as duas mensagens contraditórias da captura
+   real não podem mais aparecer juntas.
+8. **`components/ronda/ronda-editor.tsx`** — banner específico por caso
+   (recuperável: âmbar, sem "descarte"; irrecuperável: laranja, com
+   "descarte"); issues mapeadas viram destaque + mensagem real do servidor no
+   `FindingCard` certo; issues que não mapeiam (id duplicado, formato antigo)
+   aparecem numa lista à parte, texto do servidor, nunca só a contagem;
+   "Descartar esta ronda do aparelho" escondido quando a rejeição é
+   recuperável (oferecer descarte de uma ronda corrigível seria oferecer
+   perda de dado — as fotos de um achado só existem no aparelho de quem
+   fez a ronda). **Fallback pro item já preso hoje** (Etapa 4 do pacote): um
+   item que ficou `"invalid"` antes desta mudança não tem `issues` guardada —
+   nesse caso, `invalidRecoverable` cai pro mesmo gate do cliente
+   (`findingsWithMissingFields` sobre o conteúdo já carregado), sem depender
+   do servidor. Verificado via Playwright que esse fallback funciona (ver
+   Verificação) — sem ele, o item real preso no aparelho do Arquiteto teria
+   caído no banner errado ("irrecuperável") mesmo com os campos certos
+   acesos logo abaixo.
+9. **`components/ronda/queue-status-bar.tsx`** — mesmo ajuste na barra de
+   status agregada: "Descartar" por item escondido quando aquele item é
+   recuperável, com o mesmo fallback do item 8 (sem `issues` guardada, cai
+   pro gate do cliente sobre `item.submission.achados`); texto do parágrafo
+   agregado deixou de afirmar "formato antigo" como única causa possível.
+
+### Verificação
+
+1. **`npm run typecheck`** — limpo.
+2. **`npm run test:constitution`** — limpo (77 arquivos).
+3. **`npm test`** — **70/70** (57 pré-existentes intactos, nenhum alterado; 13
+   novos: `missingRequiredWhenIdentified`/`findingsWithMissingFields` em
+   `types.test.ts` — inclui teste travando que foto nunca é exigida, em
+   nenhum estado; `parseIssuePath`/`isRecoverableRejection`/`groupIssuesByFinding`
+   em `issues.test.ts`, novo).
+4. **`npm run build`** — limpo.
+5. **Ponta a ponta real, no navegador (Playwright, Chromium local), contra o
+   wizard e o editor servidos por este repo** — **não** contra `luna-core`
+   real: este ambiente (sessão remota, sem acesso ao Railway/Supabase de
+   produção nem ao aparelho do Arquiteto) não tem as credenciais que as
+   sessões anteriores usaram pra rodar `luna-core` local apontando pra
+   produção (ver entradas de 15-16/08). Verificado aqui, de fato, no DOM
+   real:
+   - Wizard: achado manual sem preencher → "Concluir LUNA Safety Walk"
+     desabilitado, aviso mostra exatamente "Achado manual — falta
+     departamento, classificação, gravidade e descrição"; campo Departamento
+     perde o destaque âmbar assim que preenchido; com os 4 campos
+     preenchidos, botão habilita.
+   - Editor, item `"invalid"` com `issues` de campo faltando (seedado direto
+     no IndexedDB) → banner âmbar, sem menção a "descarte", mensagem real do
+     servidor no campo, botão "Descartar" ausente.
+   - Editor, item `"invalid"` com `issues` de formato antigo
+     (`achados.N.id`/"Required") → banner laranja "refaça e descarte", sem a
+     instrução contraditória de salvar, botão "Descartar" presente.
+   - Editor, item `"invalid"` **sem** `issues` (simula o item real que já
+     está preso hoje, gravado pelo código antigo) → fallback da Etapa 1
+     funciona sozinho: banner âmbar (recuperável), campo aceso, sem
+     "Descartar" — é este teste que expôs e levou à correção do item 8 acima.
+   - Registros sintéticos existiram só em IndexedDB do navegador de teste
+     (processo Playwright efêmero, encerrado ao final) — nunca tocaram
+     `luna-core` nem qualquer banco real, não há limpeza de servidor a fazer.
+
+### O que NÃO foi feito / não pôde ser confirmado neste ambiente
+
+- **Não há confirmação de um `201` real contra `luna-core`.** Este ambiente
+  não tem `SUPABASE_URL`/`SUPABASE_KEY` de produção nem qualquer outra
+  credencial de backend — rodar `luna-core` local (padrão das sessões de
+  15-16/08) não é possível aqui. A lógica de validação do cliente foi
+  verificada por espelhar exatamente `requiredWhenIdentified` (mesmos 4
+  campos, mesma condição `estado === "identificado"`, foto de fora), não por
+  observar um 422 real virar 201.
+- **O portão real do pacote — "o Arquiteto abre o aparelho, entra na ronda
+  do Sylvamo, vê os campos acesos, preenche, salva, e a ronda sobe" — não
+  foi confirmado.** Esta sessão não tem acesso ao aparelho do Arquiteto nem
+  ao Railway/produção. O que foi verificado é o mecanismo que deveria
+  produzir esse resultado (item 8, fallback sem `issues`, testado
+  especificamente porque é o caso do item real preso); a confirmação final,
+  no aparelho real, depende do Architect após o deploy.
+- Migração automática do formato antigo, afrouxar a validação do servidor,
+  tornar foto obrigatória, limpar foto original órfã, "×" no `PATCH` do
+  servidor — nenhum destes; mesmos motivos já registrados nas entradas
+  anteriores, não alterados aqui.
