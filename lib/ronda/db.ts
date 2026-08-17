@@ -11,6 +11,7 @@
  * para não justificar uma dependência nova só para isto.
  */
 import type { RondaSubmission, RondaMetadata, RondaFinding, RondaClosing, SuggestionRecord } from "./types";
+import type { ValidationIssue } from "./issues";
 
 const DB_NAME = "luna-ronda";
 const DB_VERSION = 4;
@@ -89,6 +90,8 @@ export interface QueueItem {
   syncedAt?: string;
   serverRondaId?: string;
   lastError?: string;
+  /** `issues` do 422 que gerou `lastError`, quando `status === "invalid"` — ausente num item que caiu em "invalid" antes desta correção existir; `RondaEditor` cai de volta no gate do cliente nesse caso (ver `lib/ronda/issues.ts`). */
+  issues?: ValidationIssue[];
   attempts: number;
 }
 
@@ -252,7 +255,7 @@ export async function getQueueItem(localId: string): Promise<QueueItem | null> {
  * mantê-lo faria a tela acusar um problema que a edição pode ter resolvido.
  */
 export async function updateQueueSubmission(localId: string, submission: RondaSubmission): Promise<void> {
-  await updateQueueItem(localId, { submission, status: "pending", lastError: undefined });
+  await updateQueueItem(localId, { submission, status: "pending", lastError: undefined, issues: undefined });
 }
 
 /**

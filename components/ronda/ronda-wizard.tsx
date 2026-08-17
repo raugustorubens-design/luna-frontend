@@ -8,10 +8,13 @@ import {
   emptyClosing,
   metadataComplete,
   pendingFindings,
+  findingsWithMissingFields,
+  findingTitle,
   newFinding,
   duplicateFinding,
   diffSuggestionFields,
   FLAG_LABELS,
+  MISSING_FIELD_LABELS,
   type RondaMetadata,
   type RondaFinding,
   type RondaClosing,
@@ -28,6 +31,12 @@ import { FindingCard } from "./finding-card";
 import { ThemeToggle } from "./theme-toggle";
 
 type Step = "A" | "B" | "C" | "done";
+
+/** "departamento e descrição" / "departamento, classificação e descrição" — nomeia os campos por extenso, nunca uma contagem (a mesma exigência que levou este aviso a existir). */
+function formatFieldList(labels: string[]): string {
+  if (labels.length <= 1) return labels.join("");
+  return `${labels.slice(0, -1).join(", ")} e ${labels[labels.length - 1]}`;
+}
 
 /**
  * Etapa B (achado dinâmico — revisão de arquitetura, Decisões 1-3): a
@@ -152,7 +161,8 @@ export function RondaWizard() {
   }, []);
 
   const pending = useMemo(() => pendingFindings(findings), [findings]);
-  const canConclude = pending.length === 0;
+  const missingFieldsList = useMemo(() => findingsWithMissingFields(findings), [findings]);
+  const canConclude = pending.length === 0 && missingFieldsList.length === 0;
 
   /**
    * `data` fica de fora de propósito: `emptyMetadata()` já nasce com a data
@@ -470,7 +480,18 @@ export function RondaWizard() {
 
             {!canConclude && (
               <div className="rounded border border-amber-400/40 bg-amber-400/40 p-3 text-xs text-amber-900 dark:bg-amber-400/10 dark:text-amber-300">
-                <p className="mb-1 font-medium">Ainda há {pending.length} achado(s) marcado(s) como &quot;não avaliado&quot; — revise antes de concluir.</p>
+                {pending.length > 0 && (
+                  <p className="mb-1 font-medium">Ainda há {pending.length} achado(s) marcado(s) como &quot;não avaliado&quot; — revise antes de concluir.</p>
+                )}
+                {missingFieldsList.length > 0 && (
+                  <ul className="list-disc space-y-0.5 pl-4">
+                    {missingFieldsList.map(({ finding, missing }) => (
+                      <li key={finding.id}>
+                        {findingTitle(finding)} — falta {formatFieldList(missing.map((field) => MISSING_FIELD_LABELS[field]))}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
           </div>

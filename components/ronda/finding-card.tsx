@@ -9,10 +9,12 @@ import {
   FINDING_CLASSIFICATION_LABELS,
   FINDING_SEVERITIES,
   FINDING_SEVERITY_LABELS,
+  missingRequiredWhenIdentified,
   type RondaFinding,
   type RondaPhoto,
   type RiskState,
   type FindingClassification,
+  type MissingField,
 } from "@/lib/ronda/types";
 import { compressPhoto, photoToBase64 } from "@/lib/ronda/photo";
 import { saveOriginalPhoto } from "@/lib/ronda/db";
@@ -55,6 +57,7 @@ export function FindingCard({
   onDuplicate,
   onRemove,
   onSuggestionApplied,
+  serverIssues,
 }: {
   finding: RondaFinding;
   onChange: (next: RondaFinding) => void;
@@ -64,6 +67,8 @@ export function FindingCard({
   onRemove?: (findingId: string) => void;
   /** Reporta pro chamador quais campos uma sugestão de foto (Fase 4) de fato preencheu, pra Parte 3 (correção humana vira aprendizado) comparar sugerido-vs-salvo na hora de concluir. */
   onSuggestionApplied?: (findingId: string, sugerido: Partial<RondaFinding>) => void;
+  /** Issues reais do servidor (422) endereçadas a este achado, campo → mensagem — ver `lib/ronda/issues.ts`. Omitido fora da tela de edição de um item rejeitado. */
+  serverIssues?: Record<string, string>;
 }) {
   const [compressing, setCompressing] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
@@ -239,6 +244,19 @@ export function FindingCard({
 
   const isIdentified = finding.estado === "identificado";
 
+  // Mesmos 4 campos que `requiredWhenIdentified` exige no servidor — ver
+  // `lib/ronda/types.ts`. `serverIssues` cobre também o caso em que o campo
+  // já foi preenchido de novo mas o item da fila ainda carrega a mensagem
+  // do 422 anterior (recalculado a cada render, então some assim que
+  // `updateQueueSubmission` limpa `issues`).
+  const missingFields = missingRequiredWhenIdentified(finding);
+  function fieldPendingMessage(field: MissingField): string | undefined {
+    return serverIssues?.[field] ?? (missingFields.includes(field) ? "Obrigatório quando o risco é identificado." : undefined);
+  }
+  function isFieldPending(field: MissingField): boolean {
+    return missingFields.includes(field) || Boolean(serverIssues?.[field]);
+  }
+
   return (
     <div className="rounded-lg border border-black/10 bg-black/[0.03] p-3 dark:border-white/10 dark:bg-white/[0.03]">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -309,8 +327,19 @@ export function FindingCard({
 
       {isIdentified && (
         <div className="mt-3 flex flex-col gap-3 border-t border-black/10 pt-3 dark:border-white/10">
-          <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
-            Departamento
+          <label
+            className={`flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400 ${
+              isFieldPending("departamento") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
+              Departamento
+              {isFieldPending("departamento") && (
+                <span className="rounded-full bg-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
+                  {fieldPendingMessage("departamento")}
+                </span>
+              )}
+            </span>
             <input
               type="text"
               value={finding.departamento ?? ""}
@@ -378,7 +407,7 @@ export function FindingCard({
 
           <div
             className={`flex flex-col gap-1.5 text-xs text-slate-600 dark:text-slate-400 ${
-              lowConfidenceFields.has("classificacao") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
+              lowConfidenceFields.has("classificacao") || isFieldPending("classificacao") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
             }`}
           >
             <span className="flex items-center gap-1.5">
@@ -386,6 +415,11 @@ export function FindingCard({
               {lowConfidenceFields.has("classificacao") && (
                 <span className="rounded-full bg-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
                   IA não teve certeza — revise
+                </span>
+              )}
+              {isFieldPending("classificacao") && (
+                <span className="rounded-full bg-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
+                  {fieldPendingMessage("classificacao")}
                 </span>
               )}
             </span>
@@ -424,7 +458,7 @@ export function FindingCard({
 
           <label
             className={`flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400 ${
-              lowConfidenceFields.has("gravidade") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
+              lowConfidenceFields.has("gravidade") || isFieldPending("gravidade") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
             }`}
           >
             <span className="flex items-center gap-1.5">
@@ -432,6 +466,11 @@ export function FindingCard({
               {lowConfidenceFields.has("gravidade") && (
                 <span className="rounded-full bg-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
                   IA não teve certeza — revise
+                </span>
+              )}
+              {isFieldPending("gravidade") && (
+                <span className="rounded-full bg-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
+                  {fieldPendingMessage("gravidade")}
                 </span>
               )}
             </span>
@@ -475,8 +514,19 @@ export function FindingCard({
           </label>
 
           {/* textarea nativa, sem componente customizado — teclado nativo aparece normalmente, o que garante ditado por voz de graça (ADR-021). */}
-          <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
-            Descrição
+          <label
+            className={`flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400 ${
+              isFieldPending("descricao") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
+              Descrição
+              {isFieldPending("descricao") && (
+                <span className="rounded-full bg-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
+                  {fieldPendingMessage("descricao")}
+                </span>
+              )}
+            </span>
             <textarea
               value={finding.descricao ?? ""}
               onChange={(event) => onChange({ ...finding, descricao: event.target.value })}

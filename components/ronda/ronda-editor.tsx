@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getRonda, patchRonda, RondaSubmitError } from "@/lib/ronda/api-client";
 import { deleteQueueItem, getQueueItem, updateQueueSubmission, type QueueStatus } from "@/lib/ronda/db";
 import { trySyncPendingRondas } from "@/lib/ronda/queue";
-import { duplicateFinding, type RondaFinding, type RondaMetadata } from "@/lib/ronda/types";
+import { duplicateFinding, findingsWithMissingFields, type RondaFinding, type RondaMetadata } from "@/lib/ronda/types";
 import { ENTRY_STATUS_LABEL } from "@/lib/ronda/list-view";
+import { mapIssuesToFindings, isOldFormatRejection, type ValidationIssue } from "@/lib/ronda/issues";
 import { FindingCard } from "./finding-card";
 
 /**
@@ -42,6 +43,7 @@ function Editor({ source }: { source: EditorSource }) {
   const [incluirGraficoResumo, setIncluirGraficoResumo] = useState(false);
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
   const [queueError, setQueueError] = useState<string | undefined>(undefined);
+  const [queueIssues, setQueueIssues] = useState<ValidationIssue[] | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -66,6 +68,7 @@ function Editor({ source }: { source: EditorSource }) {
     setIncluirGraficoResumo(item.submission.encerramento.incluirGraficoResumo);
     setQueueStatus(item.status);
     setQueueError(item.lastError);
+    setQueueIssues(item.issues);
   }, [source]);
 
   useEffect(() => {
@@ -83,6 +86,20 @@ function Editor({ source }: { source: EditorSource }) {
     setFindings((current) => current.map((f) => (f.id === next.id ? next : f)));
   }
 
+  /**
+   * Gate do cliente (Etapa 1) sobre o conteúdo já carregado — funciona
+   * mesmo quando `queueIssues` é `undefined` (item caiu em "invalid" antes
+   * desta correção existir, sem `issues` guardadas). Só quando ele não acha
+   * nada de faltando é que a classificação recorre à heurística de
+   * `isOldFormatRejection` sobre as issues do servidor, se houver.
+   */
+  const clientMissingFields = useMemo(() => findingsWithMissingFields(findings), [findings]);
+  const { byFinding: issuesByFinding, unmapped: unmappedIssues } = useMemo(
+    () => mapIssuesToFindings(queueIssues ?? [], new Set(findings.map((f) => f.id))),
+    [queueIssues, findings],
+  );
+  const isOldFormat = clientMissingFields.length === 0 && isOldFormatRejection(queueIssues);
+
   async function handleSave() {
     if (!metadata) return;
     setSaving(true);
@@ -99,6 +116,7 @@ function Editor({ source }: { source: EditorSource }) {
         });
         setQueueStatus("pending");
         setQueueError(undefined);
+        setQueueIssues(undefined);
         // Salvar aqui devolveu o item pra fila; tentar enviar na sequência é
         // o que fecha o ciclo — sem isto, a pessoa corrige uma ronda
         // rejeitada e ela fica parada até o próximo evento de rede.
@@ -152,11 +170,25 @@ function Editor({ source }: { source: EditorSource }) {
 
       <main className="ronda-scroll-pad min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
         <div className="flex flex-col gap-3">
-          {isQueue && queueError && (
+          {isQueue && queueStatus === "invalid" && (
             <div className="rounded border border-orange-500/40 bg-orange-500/10 p-2.5 text-xs text-orange-800 dark:text-orange-300">
-              <p className="font-medium">O servidor recusou esta ronda:</p>
-              <p className="mt-1">{queueError}</p>
-              <p className="mt-1">Corrija o que estiver faltando abaixo e salve — ela volta pra fila e é reenviada.</p>
+              <p className="font-medium">O servidor recusou esta ronda{queueError ? `: ${queueError}` : "."}</p>
+              {isOldFormat ? (
+                <p className="mt-1">Não dá para recuperar — formato antigo, sem os campos que esta tela edita. Refaça esta ronda pelo formulário e descarte este item da fila.</p>
+              ) : (
+                <p className="mt-1">Corrija os campos indicados abaixo e salve — ela volta pra fila e é reenviada.</p>
+              )}
+            </div>
+          )}
+
+          {isQueue && unmappedIssues.length > 0 && (
+            <div className="rounded border border-orange-500/40 bg-orange-500/10 p-2.5 text-xs text-orange-800 dark:text-orange-300">
+              <p className="font-medium">O servidor também apontou:</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                {unmappedIssues.map((issue, index) => (
+                  <li key={`${issue.path}-${index}`}>{issue.message}</li>
+                ))}
+              </ul>
             </div>
           )}
 
@@ -182,6 +214,7 @@ function Editor({ source }: { source: EditorSource }) {
               onChange={updateFinding}
               onDuplicate={(f) => setFindings((current) => [...current, duplicateFinding(f)])}
               onRemove={isQueue ? (findingId) => setFindings((current) => current.filter((f) => f.id !== findingId)) : undefined}
+              serverIssues={issuesByFinding[finding.id]}
             />
           ))}
 
