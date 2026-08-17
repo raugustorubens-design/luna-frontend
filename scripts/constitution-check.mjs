@@ -42,7 +42,19 @@ const sourceFiles = [
 
 assert.ok(sourceFiles.length > 0, "luna-frontend source files must exist for this check to mean anything");
 
-const DATABASE_TOKENS = /supabase|drizzle|@supabase\/supabase-js|['"]pg['"]/i;
+// ADR-022, 17/08/2026 — estreitado para casar só especificador de import/
+// require, não a palavra solta em qualquer lugar do arquivo. A versão
+// anterior (`/supabase|drizzle|.../i`, sem âncora) reprovava qualquer menção
+// em prosa — ex. o razão de estado de `/v2` descreve, em texto real e
+// verificável, que a Memória "grava no Supabase com vetor semântico"
+// (`components/site/state-ledger.tsx`, `pipeline.tsx`). Isso nunca foi uma
+// importação de banco, e o próprio `PROVIDER_TOKENS` logo abaixo já segue
+// esse princípio — casa `GroqAdapter`, não a palavra solta "Groq" (que
+// aparece como rótulo de UI em `lib/forge/attribution.ts` sem disparar o
+// checker). Continua pegando `import ... from "@supabase/supabase-js"`,
+// `require("pg")`, import dinâmico etc. — só não pega mais texto de tela.
+const DATABASE_TOKENS =
+  /(?:from\s+|require\(\s*|import\(\s*)["'](?:[^"']*\/)?(?:@supabase\/supabase-js|drizzle-orm|pg)["']/i;
 const PROVIDER_TOKENS =
   /GroqAdapter|ChatGptAdapter|ClaudeAdapter|GrokAdapter|ManusAdapter|api\.groq\.com|api\.openai\.com|api\.anthropic\.com/;
 const INTERNAL_ORGAN_IMPORT = /from\s+["']\.{2,}\/(.*\/)?apps\/frontend\/artifacts\/api-server\/src\//;
