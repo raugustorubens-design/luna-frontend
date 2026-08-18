@@ -1668,3 +1668,76 @@ campo, não de código, e portanto não incluída nesta autoatestação.
 - Não remove nem esconde o botão "Descartar esta ronda do aparelho" já
   existente em `ronda-editor.tsx` — continua disponível pra qualquer
   status de fila, com o mesmo aviso de confirmação que já tinha.
+
+  **Correção do parágrafo acima, ver entrada de 2026-08-18 logo abaixo:**
+  o botão passou a ficar escondido quando a rejeição é recuperável.
+  Decisão revista depois de comparar com a branch irmã (`#29`, superada)
+  e a revisão de código sobre as duas.
+
+---
+
+## 2026-08-18 — Ronda presa em campo, parte 2: esconde "Descartar" quando a rejeição é recuperável, corrige o caso de payload misto
+
+### Contexto
+
+Três sessões chegaram, de forma independente, na mesma correção (gate do
+cliente divergindo de `requiredWhenIdentified`) entre 18:27 e 19:04 de
+17/08 — PRs `#28`, `#29` e `#30` deste repositório. Uma revisão comparando
+os três (relatório externo a esta sessão, "Situação de PR e merge —
+17/08/2026, 21h") recomendou `#30` como base — é o único com verificação
+`curl` real contra o Gateway de produção (422→201, linha do Supabase
+contada e removida) — e portar duas coisas de `#29` que `#30` não tinha:
+esconder "Descartar esta ronda do aparelho" quando a rejeição é
+recuperável, e um achado adicional da própria revisão sobre como essa
+checagem deveria funcionar num payload misto.
+
+### O que mudou
+
+**`lib/ronda/issues.ts`** — nova `canDiscardInvalidItem(achados, issues)`.
+Deliberadamente mais conservadora que `isOldFormatRejection` (que decide só
+a *mensagem* — "formato antigo" vs. "corrija os campos"): `isOldFormatRejection`
+usa `.some()`, então basta **uma** issue em `achados.N.id` pra classificar o
+422 inteiro como formato antigo, mesmo que **outra** issue do mesmo 422
+aponte pra um campo de um achado que ainda está na lista carregada — um
+payload misto assim ainda tem o que corrigir editando o achado. A mensagem
+continua "formato antigo" (a explicação técnica exata não muda); a
+permissão de descartar, não — `canDiscardInvalidItem` só devolve `true`
+quando não há **nada** corrigível: nem o gate do cliente sobre o conteúdo
+já carregado (`findingsWithMissingFields`), nem uma issue do servidor que
+mapeia pra um campo de um achado que ainda existe na lista
+(`mapIssuesToFindings(...).byFinding`).
+
+Usada em **`ronda-editor.tsx`** (esconde "Descartar esta ronda do
+aparelho" quando `queueStatus === "invalid"` e não há nada corrigível) e em
+**`queue-status-bar.tsx`** (mesma checagem por item na lista agregada de
+itens rejeitados; o parágrafo agregado deixou de afirmar "provavelmente
+formato antigo" como única causa possível).
+
+### Verificação
+
+1. `npm run typecheck` / `npm run test:constitution` / `npm run build` —
+   limpos.
+2. `npm test` — **75/75** (72 pré-existentes intactos, nenhum alterado; 3
+   novos em `issues.test.ts`, cobrindo especificamente o caso misto: uma
+   issue de campo real + uma de `achados.N.id` no mesmo 422 →
+   `canDiscardInvalidItem` continua `false`, mesmo com `isOldFormatRejection`
+   `true`).
+3. **No navegador, via Playwright (Chromium local) contra o wizard e o
+   editor deste repo**: item `"invalid"` seedado direto no IndexedDB com o
+   payload misto exato do teste acima → banner mantém "Não dá para
+   recuperar — formato antigo" (mensagem preservada, como pretendido),
+   botão "Descartar esta ronda do aparelho" confirmado **ausente**, e a
+   mensagem real do servidor ("departamento é obrigatório quando o risco
+   foi identificado") confirmada visível no campo. Registro sintético só
+   em IndexedDB do navegador de teste, processo efêmero — nunca tocou
+   `luna-core` nem qualquer banco real.
+
+### O que este pacote NÃO faz
+
+- Não muda a heurística de `isOldFormatRejection` nem o texto da
+  mensagem — só a permissão de oferecer "Descartar".
+- Não fecha `#29` nem mexe em `#28` — decisões de PR, fora do escopo de
+  um commit de código.
+- Mesmas ressalvas da entrada de 17/08 acima (validação do servidor
+  inalterada, foto nunca obrigatória, formato antigo não migrado, `app/forge/`
+  e `components/forge/` intocados).
