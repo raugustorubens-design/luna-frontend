@@ -1741,3 +1741,111 @@ formato antigo" como única causa possível).
 - Mesmas ressalvas da entrada de 17/08 acima (validação do servidor
   inalterada, foto nunca obrigatória, formato antigo não migrado, `app/forge/`
   e `components/forge/` intocados).
+
+---
+
+## 2026-08-18 — Compressão de foto em paralelo descartava a aba antes do upload; correção de diagnóstico do pacote anterior
+
+### Achado real — não o que o pacote original descrevia
+
+Um pacote anterior ("a Camada 2 desligou a leitura de imagem sem ninguém
+notar") diagnosticava a sugestão por IA como desligada no caminho com rede,
+inferindo isso da mensagem do commit da Camada 2 (16/08) em vez de ler a
+chamada. **Essa leitura estava errada** — confirmado nesta sessão e pelo
+próprio Engenheiro depois: `components/ronda/finding-card.tsx`,
+`handlePhotoChange`, tem
+
+```ts
+void photoToBase64(compressed[0])
+  .then((photo) => applyPhotoSuggestion(photo))
+  .catch(() => undefined);
+```
+
+fora do laço de upload, fora de qualquer condicional — dispara sempre, com
+ou sem rede. A sugestão por foto nunca esteve quebrada. O pacote foi
+retirado; esta entrada registra a correção de diagnóstico, não só a de
+código, porque o erro (inferir do texto do commit em vez de abrir a
+função) é o tipo de achado que vale mais que a correção em si.
+
+**Duas hipóteses eliminadas nesta sessão, sem código:**
+- *Cache do service worker servindo bundle antigo do `#30`* — descartada:
+  as rondas que estavam presas na fila do aparelho real do Arquiteto
+  subiram e a fila esvaziou, o que só acontece com o gate novo em
+  produção.
+- *Sugestão por foto desligada com rede* — descartada, ver acima.
+
+### O bug real, encontrado uma linha acima do que o pacote retirado apontava
+
+Relato de campo, textual: *"a foto não sobe, sai do app"*. Mesma função,
+`handlePhotoChange`:
+
+```ts
+const compressed = await Promise.all(fileList.map(compressPhoto));
+```
+
+O `<input>` é `multiple`. `compressPhoto` decodifica cada foto em
+resolução plena (`new Image()` + `drawImage` num `<canvas>`) antes de
+reduzir a 1280px — três fotos de 12MP em paralelo somam ~147MB de bitmap
+RGBA simultâneos, mais os `File` originais retidos para o upload logo
+depois. Memória suficiente para o navegador móvel descartar a aba **no
+meio da compressão**, antes de `uploadFoto` sequer ser chamado — sem erro
+na tela (a Promise nunca resolve nem rejeita, a aba já não existe), sem
+falha de rede, sem nada em log de servidor. "A foto não sobe" e "sai do
+app" são o mesmo evento, não dois sintomas.
+
+### O que mudou
+
+**`components/ronda/finding-card.tsx`** — única mudança: o `Promise.all`
+que decodificava todas as fotos selecionadas em paralelo virou um laço
+sequencial (`for` com `await` por arquivo). No máximo um bitmap de
+resolução plena na memória por vez, em vez de N simultâneos. Comentário
+no código explica o porquê (não óbvio sem o contexto de campo).
+
+Isolado, de propósito — nada mais tocado nesta entrada:
+- **Não** trocado `new Image()`/`canvas` por `createImageBitmap` com
+  `resizeWidth`/`resizeHeight` (decodificaria já reduzido, sem o pico de
+  memória de resolução plena) — melhoria real, mas é mudança de
+  mecanismo de decodificação, não a causa raiz mínima; fica pra um PR
+  próprio.
+- **Não** movida a sugestão por foto para usar `fotoId` em vez de
+  base64 — motivo é economia de memória, não correção de um bug (a
+  sugestão nunca esteve quebrada, ver acima); e mexer nisso sem o
+  caminho por id já existir no servidor quebraria a sugestão de
+  verdade, criando o bug que o pacote anterior descreveu por engano.
+- **Não** adicionada instrumentação de início/fim de compressão no
+  IndexedDB — fica pra quando a correção de decodificação reduzida
+  entrar, que é quando esse contador teria mais valor.
+
+### Verificação
+
+1. `npm run typecheck` — limpo.
+2. `npm test` — **75/75**, nenhum teste alterado (o mesmo total de antes
+   desta mudança — a correção não adiciona nem quebra caminho de teste
+   algum; a suíte atual não tem teste de compressão de imagem real,
+   que dependeria de `<canvas>`/`Image` em ambiente DOM completo).
+3. `npm run test:constitution` — limpo (77 arquivos).
+4. `npm run build` — limpo.
+5. **Não verificado nesta sessão**: reprodução real do descarte de aba
+   sob pressão de memória (exigiria um dispositivo móvel real com fotos
+   de 12MP e memória limitada — não reproduzível neste ambiente
+   sandboxed) e a confirmação em produção de que 3 fotos simultâneas não
+   derrubam mais a aba. **Portão real**: o Arquiteto anexar 3 fotos de
+   uma vez numa ronda real e todas subirem, sem a aba fechar. Enquanto
+   isso não acontecer, esta etapa não está confirmada — só o mecanismo
+   que deveria resolver o problema está no código.
+6. Sem acesso ao Railway nesta sessão (confirmado pelo Engenheiro,
+   tentativa própria retornou 403) — nenhuma verificação contra produção
+   foi tentada aqui, como instruído.
+
+### O que este pacote NÃO faz
+
+- Não implementa decodificação já reduzida (`createImageBitmap`) — PR
+  próprio, listado acima.
+- Não move a sugestão por foto para `fotoId` — PR próprio, e só depois
+  do endpoint por id existir no servidor.
+- Não adiciona contador/instrumentação de compressão.
+- Não toca `app/forge/`, `components/forge/`, `app/page.tsx`.
+- Não mexe na branch do `#29` (fechada, não mergeada, `mergeable_state:
+  behind`, superada pelo `#30`) — este trabalho partiu de `origin/main`
+  limpo, confirmado por `git merge-base origin/main HEAD` batendo com a
+  ponta de `origin/main` antes de qualquer commit.
