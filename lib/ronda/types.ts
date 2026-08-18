@@ -218,3 +218,41 @@ export function metadataComplete(metadata: RondaMetadata): boolean {
 export function pendingFindings(findings: RondaFinding[]): RondaFinding[] {
   return findings.filter((finding) => finding.estado === "nao_avaliado");
 }
+
+/** Título de exibição de um achado — flag de origem, ou "Achado manual" para os que nasceram do "+" avulso. Mesma regra usada no cabeçalho do `FindingCard`, extraída aqui para não duplicar em quem lista achados fora do card (aviso de campo faltando na Etapa C). */
+export function findingTitle(finding: RondaFinding): string {
+  return (finding.flagId && FLAG_LABELS[finding.flagId]) || "Achado manual";
+}
+
+export type MissingField = "departamento" | "classificacao" | "gravidade" | "descricao";
+
+export const MISSING_FIELD_LABELS: Record<MissingField, string> = {
+  departamento: "departamento",
+  classificacao: "classificação",
+  gravidade: "gravidade",
+  descricao: "descrição",
+};
+
+/**
+ * Espelha `requiredWhenIdentified` de `luna-core/src/convergia/ronda/validation.ts`
+ * — mesmo nome, mesma regra, mesmos 4 campos. Existe para o gate do cliente
+ * (`pendingFindings` sozinho não bastava: só olhava "não avaliado", nunca os
+ * campos obrigatórios de um achado já "identificado") não deixar passar o
+ * que o servidor recusa. Foto fica de fora de propósito, em todo estado —
+ * correção de usabilidade sobre a ferramenta real da Manserv, não
+ * reintroduzir.
+ */
+export function missingRequiredWhenIdentified(finding: RondaFinding): MissingField[] {
+  if (finding.estado !== "identificado") return [];
+  const missing: MissingField[] = [];
+  if (!finding.departamento) missing.push("departamento");
+  if (!finding.classificacao) missing.push("classificacao");
+  if (!finding.gravidade) missing.push("gravidade");
+  if (!finding.descricao) missing.push("descricao");
+  return missing;
+}
+
+/** Achados "identificado" com pelo menos um campo obrigatório faltando — usado pelo gate de "Concluir ronda" e pelo aviso da Etapa C, que precisa nomear achado e campos (nunca só uma contagem). */
+export function findingsWithMissingFields(findings: RondaFinding[]): Array<{ finding: RondaFinding; missing: MissingField[] }> {
+  return findings.map((finding) => ({ finding, missing: missingRequiredWhenIdentified(finding) })).filter((entry) => entry.missing.length > 0);
+}

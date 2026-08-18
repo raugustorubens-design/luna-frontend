@@ -1513,3 +1513,231 @@ cada ronda antiga listada ali e descartar o item.
 - Mudança no backend (`luna-core`) — a validação atual (exigir `id`) está
   correta pro contrato atual; decidido não "fazer o 422 sumir" mudando o
   que o servidor aceita.
+
+---
+
+## 2026-08-17 — Fix urgente: gate do wizard divergia do servidor — ronda do Sylvamo presa em campo com 6 problemas não nomeados e instrução contraditória
+
+### Causa raiz
+
+`pendingFindings` (o único gate que "Concluir ronda" checava) só olhava
+`estado === "nao_avaliado"`. Não replicava `requiredWhenIdentified` de
+`luna-core/src/convergia/ronda/validation.ts` — que exige `departamento`,
+`classificacao`, `gravidade` e `descricao` em todo achado `identificado`.
+Resultado real, capturado em campo (Sylvamo — LOGISTICA MG, turno B,
+17/08 13:58): um achado com departamento vazio passou pelo wizard, subiu,
+levou 422 ("Envio de ronda reprovado na validação (6 problema(s))."), e a
+tela de edição da fila (`ronda-editor.tsx`) não mostrava quais 6 —
+só o texto genérico do servidor, seguido por duas instruções que se
+contradiziam: "Refaça esta ronda e descarte este item da fila" (herdada
+do fix de 15/08, que só se aplica a payload pré-migração sem `id`) ao
+lado de "Corrija o que estiver faltando abaixo e salve" (hardcoded,
+sempre mostrada, mesmo quando a primeira instrução já mandou descartar).
+
+### O que mudou
+
+1. **`lib/ronda/types.ts`** — `missingRequiredWhenIdentified(finding)`,
+   espelho de `requiredWhenIdentified` do servidor (mesmos 4 campos, foto
+   fora de propósito, em todo estado). `findingsWithMissingFields(findings)`
+   agrega pra UI. `findingTitle(finding)` extraído do que já existia em
+   `FindingCard` (flag ou "Achado manual"), reaproveitado no aviso da
+   Etapa C.
+2. **`ronda-wizard.tsx`** — `canConclude` passa a exigir também
+   `findingsWithMissingFields(findings).length === 0`. O aviso da Etapa C
+   lista cada achado incompleto nomeado, com os campos por extenso
+   ("Achado manual — falta departamento e descrição"), nunca uma
+   contagem.
+3. **`finding-card.tsx`** — os 4 campos obrigatórios ganham a mesma
+   marcação âmbar que a Fase 4 já usa para `camposIncertos` (nenhum
+   padrão novo) enquanto vazios num achado `identificado`. Novo prop
+   opcional `serverIssues` (campo → mensagem real do servidor) sobrepõe o
+   texto genérico quando disponível. Duplicar um achado incompleto
+   (`+ Duplicar`, de 15/08) preserva os campos faltando — coberto em
+   teste, não é caso especial em lugar nenhum do código.
+4. **`lib/ronda/issues.ts`** (novo) — `parseIssuePath` traduz
+   `achados.{id}.{campo}` (separando pelo **último** ponto, não o
+   primeiro — sobrevive a um id de achado que contenha ponto);
+   `mapIssuesToFindings` agrupa por achado + lista o que não mapeia
+   (metadado, achado que não existe mais localmente); `isOldFormatRejection`
+   decide "formato antigo, irrecuperável" (issue em `.id`, ou nenhuma
+   issue guardada) vs. "campo faltando, recuperável".
+5. **`api-client.ts`** — `RondaSubmitError.issues` tipado com o
+   `ValidationIssue` novo (já existia como shape inline; não mudou
+   comportamento, só nomeou o tipo pra `db.ts` reaproveitar).
+6. **`db.ts`** — `QueueItem.issues?: ValidationIssue[]`, gravado junto do
+   `lastError`. Sem bump de `DB_VERSION`: é campo novo opcional num
+   registro já existente, não store/index novo — IndexedDB não tem
+   schema por campo, então nenhuma migração é necessária pra um item
+   antigo (sem `issues`) continuar válido. `updateQueueSubmission` limpa
+   `issues` junto do `lastError` — mesma lógica que já limpava o segundo.
+7. **`queue.ts`** — `lastError` deixou de embutir a instrução ("refaça e
+   descarte"/"corrija e salve"); guarda só o que aconteceu. A decisão do
+   que dizer passou pra `ronda-editor.tsx`, que tem o que
+   `queue.ts` não tem: o conteúdo carregado (pro gate do cliente) e,
+   quando disponível, as `issues` do servidor.
+8. **`ronda-editor.tsx`** — a contradição virou uma escolha: `isOldFormat`
+   é `true` só quando o gate do cliente (`findingsWithMissingFields` sobre
+   o `findings` já carregado) não acha nada de faltando **e**
+   `isOldFormatRejection(queueIssues)` também não acha sinal de campo
+   recuperável — nessa ordem, de propósito: um item `"invalid"` de antes
+   desta correção não tem `issues` guardada, e é o gate do cliente sozinho
+   quem resolve esse caso (não precisa do servidor ter falado nada).
+   Formato antigo mostra "não dá pra recuperar, descarte"; campo faltando
+   mostra "corrija abaixo e salve" — nunca as duas juntas. Issues que não
+   mapeiam pra um achado da ronda carregada aparecem numa lista própria,
+   com o texto do servidor. Cada `FindingCard` recebe as issues do próprio
+   achado via `serverIssues`. Nenhum botão de descartar foi removido nem
+   escondido (regra do pacote: só acréscimo) — o existente já avisa
+   claramente que a ronda não enviada se perde.
+
+### Verificação
+
+1. `pnpm typecheck`, `pnpm test` (72/72 — todos os 56 anteriores intactos,
+   16 novos: `missingRequiredWhenIdentified`/`findingsWithMissingFields`
+   em `types.test.ts`, `parseIssuePath`/`mapIssuesToFindings`/
+   `isOldFormatRejection` em `issues.test.ts`, novo), `pnpm run
+   test:constitution`, `pnpm build` — todos limpos neste ambiente.
+2. **Ponta a ponta real, via Playwright contra o wizard real (`/ronda`,
+   `pnpm dev` local com `NEXT_PUBLIC_LUNA_GATEWAY_BASE_URL` apontado pro
+   Gateway de produção)**: Etapa A completa, achado manual com
+   classificação/gravidade/descrição preenchidas e departamento vazio de
+   propósito → "Concluir LUNA Safety Walk" confirmado **desabilitado**,
+   aviso confirmado com o texto exato "Achado manual — falta
+   departamento". Preenchido o departamento → botão confirmado
+   **habilitado**. Este trecho não depende de rede (o gate roda inteiro
+   no cliente) e rodou de ponta a ponta no navegador real.
+3. **Achado neste ambiente, registrado com honestidade**: o Chromium
+   deste sandbox não conseguiu alcançar hosts externos (Railway) nem
+   configurando `--proxy-server` pro proxy do agente — `curl`/`fetch` do
+   Node atravessam o proxy normalmente (confirmado, `GET
+   /convergia/ronda/flags` via curl funcionou), mas o processo do
+   Chromium recebe `ERR_CONNECTION_RESET` mesmo com a mesma URL, sem
+   nenhuma falha registrada em `/__agentproxy/status` — o pedido não
+   chega a sair do processo do navegador. Não foi possível, portanto,
+   observar o `POST /convergia/ronda` disparado pelo clique real no botão
+   "Concluir" neste ambiente (o texto "Já confirmado no servidor" na tela
+   de sucesso do wizard, nesse teste, refletia `counts.pending` de
+   **antes** do enfileiramento, não uma confirmação real — não
+   confiar nesse texto como prova de envio; comportamento pré-existente
+   do hook de fila, não alterado por este pacote, fora de escopo aqui).
+4. **A parte de rede foi verificada do mesmo jeito que o fix de
+   15/08 já validou o formato antigo: `curl` direto contra o Gateway de
+   produção real** (`uvicorn-main-production-92f8.up.railway.app`), com
+   um achado `identificado` no mesmo shape que o wizard produz
+   (`id`/`flagId`/`estado`/campos). Sem `departamento`: `422`,
+   `issues: [{"path":"achados.<id>.departamento","message":"departamento
+   é obrigatório quando o risco foi identificado"}]` — confirma que
+   `missingRequiredWhenIdentified` no cliente aponta exatamente o que o
+   servidor aponta. Com `departamento`: `201`,
+   `ronda_d56bf057-f0a5-4464-be52-1c39145bb4b8`. Confirmado persistido via
+   consulta direta ao Supabase do projeto real (`jdbzhrtovpoaafpytgza` —
+   não o projeto `luna-safety-walk-piloto`, que está com
+   `convergia_rondas` vazio e não é o que o Gateway de produção realmente
+   usa; achado incidental desta verificação, não investigado além disso,
+   fora de escopo). Registro de teste removido depois (`delete from
+   convergia_rondas where ronda_id = '...' returning ronda_id`, linha
+   devolvida confirmando a exclusão; contagem da tabela conferida antes/depois,
+   2 rondas reais preservadas).
+
+### O "portão real" (ADR desta sessão) — NÃO verificado, e por que
+
+O pacote de origem é explícito: "o Arquiteto abre o aparelho, entra na
+ronda do Sylvamo, vê os campos acesos, preenche, salva, e a ronda sobe.
+Enquanto essa ronda não subir, esta etapa não está feita." Isso é uma
+ação humana, no aparelho físico do Architect, fora do alcance desta
+sessão (sem acesso a esse dispositivo). **Não fazer essa afirmação aqui.**
+O que este pacote garante, e que foi de fato confirmado nesta sessão: (1)
+o gate do cliente aponta os mesmos campos que o servidor exige, incluindo
+sobre o conteúdo já carregado de um item `"invalid"` sem `issues`
+guardada (Etapa 1, testado); (2) uma vez que o Architect preencha os
+campos acesos e clique "Salvar e enviar" na tela de edição da fila, o
+payload resultante passa a validação do servidor real (confirmado via
+`curl` idêntico, item 4 acima). A confirmação de que a ronda real do
+Sylvamo de fato subiu depende de o Architect abrir o aparelho — ação de
+campo, não de código, e portanto não incluída nesta autoatestação.
+
+### O que este pacote NÃO faz
+
+- Não afrouxa a validação do servidor (`luna-core` inalterado).
+- Não torna foto obrigatória, em nenhum estado — travado em teste.
+- Não migra formato antigo — `isOldFormatRejection` reconhece, não
+  converte.
+- Não limpa foto original órfã no IndexedDB — segue aberta, já registrada
+  em 15/08.
+- Não toca em `app/forge/`, `components/forge/`, `app/page.tsx`.
+- Não remove nem esconde o botão "Descartar esta ronda do aparelho" já
+  existente em `ronda-editor.tsx` — continua disponível pra qualquer
+  status de fila, com o mesmo aviso de confirmação que já tinha.
+
+  **Correção do parágrafo acima, ver entrada de 2026-08-18 logo abaixo:**
+  o botão passou a ficar escondido quando a rejeição é recuperável.
+  Decisão revista depois de comparar com a branch irmã (`#29`, superada)
+  e a revisão de código sobre as duas.
+
+---
+
+## 2026-08-18 — Ronda presa em campo, parte 2: esconde "Descartar" quando a rejeição é recuperável, corrige o caso de payload misto
+
+### Contexto
+
+Três sessões chegaram, de forma independente, na mesma correção (gate do
+cliente divergindo de `requiredWhenIdentified`) entre 18:27 e 19:04 de
+17/08 — PRs `#28`, `#29` e `#30` deste repositório. Uma revisão comparando
+os três (relatório externo a esta sessão, "Situação de PR e merge —
+17/08/2026, 21h") recomendou `#30` como base — é o único com verificação
+`curl` real contra o Gateway de produção (422→201, linha do Supabase
+contada e removida) — e portar duas coisas de `#29` que `#30` não tinha:
+esconder "Descartar esta ronda do aparelho" quando a rejeição é
+recuperável, e um achado adicional da própria revisão sobre como essa
+checagem deveria funcionar num payload misto.
+
+### O que mudou
+
+**`lib/ronda/issues.ts`** — nova `canDiscardInvalidItem(achados, issues)`.
+Deliberadamente mais conservadora que `isOldFormatRejection` (que decide só
+a *mensagem* — "formato antigo" vs. "corrija os campos"): `isOldFormatRejection`
+usa `.some()`, então basta **uma** issue em `achados.N.id` pra classificar o
+422 inteiro como formato antigo, mesmo que **outra** issue do mesmo 422
+aponte pra um campo de um achado que ainda está na lista carregada — um
+payload misto assim ainda tem o que corrigir editando o achado. A mensagem
+continua "formato antigo" (a explicação técnica exata não muda); a
+permissão de descartar, não — `canDiscardInvalidItem` só devolve `true`
+quando não há **nada** corrigível: nem o gate do cliente sobre o conteúdo
+já carregado (`findingsWithMissingFields`), nem uma issue do servidor que
+mapeia pra um campo de um achado que ainda existe na lista
+(`mapIssuesToFindings(...).byFinding`).
+
+Usada em **`ronda-editor.tsx`** (esconde "Descartar esta ronda do
+aparelho" quando `queueStatus === "invalid"` e não há nada corrigível) e em
+**`queue-status-bar.tsx`** (mesma checagem por item na lista agregada de
+itens rejeitados; o parágrafo agregado deixou de afirmar "provavelmente
+formato antigo" como única causa possível).
+
+### Verificação
+
+1. `npm run typecheck` / `npm run test:constitution` / `npm run build` —
+   limpos.
+2. `npm test` — **75/75** (72 pré-existentes intactos, nenhum alterado; 3
+   novos em `issues.test.ts`, cobrindo especificamente o caso misto: uma
+   issue de campo real + uma de `achados.N.id` no mesmo 422 →
+   `canDiscardInvalidItem` continua `false`, mesmo com `isOldFormatRejection`
+   `true`).
+3. **No navegador, via Playwright (Chromium local) contra o wizard e o
+   editor deste repo**: item `"invalid"` seedado direto no IndexedDB com o
+   payload misto exato do teste acima → banner mantém "Não dá para
+   recuperar — formato antigo" (mensagem preservada, como pretendido),
+   botão "Descartar esta ronda do aparelho" confirmado **ausente**, e a
+   mensagem real do servidor ("departamento é obrigatório quando o risco
+   foi identificado") confirmada visível no campo. Registro sintético só
+   em IndexedDB do navegador de teste, processo efêmero — nunca tocou
+   `luna-core` nem qualquer banco real.
+
+### O que este pacote NÃO faz
+
+- Não muda a heurística de `isOldFormatRejection` nem o texto da
+  mensagem — só a permissão de oferecer "Descartar".
+- Não fecha `#29` nem mexe em `#28` — decisões de PR, fora do escopo de
+  um commit de código.
+- Mesmas ressalvas da entrada de 17/08 acima (validação do servidor
+  inalterada, foto nunca obrigatória, formato antigo não migrado, `app/forge/`
+  e `components/forge/` intocados).

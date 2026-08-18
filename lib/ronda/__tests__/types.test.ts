@@ -3,12 +3,15 @@ import test from "node:test";
 import {
   metadataComplete,
   pendingFindings,
+  missingRequiredWhenIdentified,
+  findingsWithMissingFields,
   emptyMetadata,
   emptyFindings,
   newFinding,
   duplicateFinding,
   diffSuggestionFields,
   type RiskState,
+  type RondaFinding,
   type SuggestionRecord,
 } from "../types";
 
@@ -90,4 +93,60 @@ test("diffSuggestionFields ignores fields the suggestion never touched, even if 
   const record: SuggestionRecord = { origem: "flag", flagId: "eletricidade", sugerido: { descricao: "Quadro exposto" } };
   const saved = newFinding("eletricidade", { descricao: "Quadro exposto", gravidade: "critica", departamento: "Manutenção" });
   assert.deepEqual(diffSuggestionFields(record, saved), {});
+});
+
+// missingRequiredWhenIdentified espelha `requiredWhenIdentified` de
+// luna-core/src/convergia/ronda/validation.ts — divergir daqui é exatamente
+// o bug que travou a ronda do Sylvamo em campo.
+
+test("missingRequiredWhenIdentified returns empty for a non-identificado achado, even with every field blank", () => {
+  const naoAvaliado: RondaFinding = { id: "f1", flagId: null, estado: "nao_avaliado" };
+  const inexistente: RondaFinding = { id: "f2", flagId: null, estado: "inexistente" };
+  assert.deepEqual(missingRequiredWhenIdentified(naoAvaliado), []);
+  assert.deepEqual(missingRequiredWhenIdentified(inexistente), []);
+});
+
+test("missingRequiredWhenIdentified returns empty once all 4 required fields are filled", () => {
+  const finding = newFinding("trabalho_em_altura", {
+    departamento: "Manutenção",
+    classificacao: "nao_conformidade",
+    gravidade: "alta",
+    descricao: "Talabarte solto",
+  });
+  assert.deepEqual(missingRequiredWhenIdentified(finding), []);
+});
+
+test("missingRequiredWhenIdentified without departamento and descricao returns exactly those two", () => {
+  const finding = newFinding("trabalho_em_altura", { classificacao: "nao_conformidade", gravidade: "alta" });
+  assert.deepEqual(missingRequiredWhenIdentified(finding), ["departamento", "descricao"]);
+});
+
+test("missingRequiredWhenIdentified never flags foto, in any state, even with no photo at all — regression lock for a rule already fixed once in the field", () => {
+  const semFoto: RondaFinding = { id: "f3", flagId: "trabalho_em_altura", estado: "identificado", fotos: undefined, fotoIds: undefined };
+  for (const estado of ["identificado", "nao_avaliado", "inexistente"] as const) {
+    const missing = missingRequiredWhenIdentified({ ...semFoto, estado });
+    assert.ok(!missing.some((field) => (field as string).startsWith("foto")), `estado=${estado} não pode listar campo de foto`);
+  }
+});
+
+test("findingsWithMissingFields lists only achados with at least one missing field, finding + missing fields together", () => {
+  const complete = newFinding("eletricidade", { departamento: "Manutenção", classificacao: "atencao", gravidade: "baixa", descricao: "x" });
+  const incomplete = newFinding(null, { classificacao: "nao_conformidade", gravidade: "alta" });
+  const result = findingsWithMissingFields([complete, incomplete]);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].finding.id, incomplete.id);
+  assert.deepEqual(result[0].missing, ["departamento", "descricao"]);
+});
+
+test("findingsWithMissingFields is empty when there is nothing to fix, including an empty findings list", () => {
+  assert.deepEqual(findingsWithMissingFields([]), []);
+  const complete = newFinding("eletricidade", { departamento: "Manutenção", classificacao: "atencao", gravidade: "baixa", descricao: "x" });
+  assert.deepEqual(findingsWithMissingFields([complete]), []);
+});
+
+test("duplicating an incomplete achado carries the same missing fields — a duplicate never counts as already valid", () => {
+  const incomplete = newFinding("eletricidade", { descricao: "Quadro exposto" });
+  const copy = duplicateFinding(incomplete);
+  assert.deepEqual(missingRequiredWhenIdentified(copy), missingRequiredWhenIdentified(incomplete));
+  assert.equal(findingsWithMissingFields([incomplete, copy]).length, 2);
 });

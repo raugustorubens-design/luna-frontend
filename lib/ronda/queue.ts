@@ -91,18 +91,23 @@ export async function trySyncPendingRondas(onProgress?: (item: QueueItem) => voi
         });
       } catch (error) {
         const message = error instanceof RondaSubmitError ? error.message : error instanceof Error ? error.message : "Falha desconhecida ao enviar.";
+        const issues = error instanceof RondaSubmitError ? error.issues : undefined;
         // Achado real em produção: itens enfileirados antes da migração pra
         // achado dinâmico (categoria em vez de id/flagId) ficavam presos em
         // "error" e eram retentados pra sempre em todo reconecte/reabertura
         // do app, gerando 422 repetido sem nunca se resolver. "invalid" tira
         // esses itens do loop de retry automático (ver isPermanentRejection).
+        //
+        // A mensagem aqui só descreve o que aconteceu — não prescreve "refaça
+        // e descarte" nem "corrija e salve": essa decisão depende de o
+        // registro ser recuperável (campo faltando) ou não (formato antigo),
+        // e só `RondaEditor` tem o que precisa pra decidir (o gate do
+        // cliente sobre o conteúdo carregado, ver `lib/ronda/issues.ts`).
         const permanent = isPermanentRejection(error);
         const nextStatus = permanent ? "invalid" : "error";
-        const nextMessage = permanent
-          ? `Este registro não pode ser reenviado automaticamente (rejeitado pelo servidor: ${message}). Refaça esta ronda e descarte este item da fila.`
-          : message;
-        await updateQueueItem(item.localId, { status: nextStatus, lastError: nextMessage, attempts: item.attempts + 1 });
-        onProgress?.({ ...item, status: nextStatus, lastError: nextMessage });
+        const nextMessage = permanent ? `Este registro não pode ser reenviado automaticamente (rejeitado pelo servidor: ${message}).` : message;
+        await updateQueueItem(item.localId, { status: nextStatus, lastError: nextMessage, issues, attempts: item.attempts + 1 });
+        onProgress?.({ ...item, status: nextStatus, lastError: nextMessage, issues });
         // Uma falha (ex. rede caiu de novo no meio da fila) não deve
         // impedir a tentativa dos outros itens pendentes — continua o loop
         // em vez de abortar tudo no primeiro erro.
