@@ -1,9 +1,11 @@
 import type { RondaPhoto } from "./types";
 
-/** Versão de campo recém-comprimida, ainda como binário. Vira `RondaPhoto` (base64) só se precisar ser guardada/enviada embutida no relatório. */
+/** Versão de campo recém-comprimida, ainda como binário. Vira `RondaPhoto` (base64) só se precisar ser guardada/enviada embutida no relatório. `width`/`height` são a dimensão de saída — existem para a instrumentação de diagnóstico (`lib/ronda/diagnostics.ts`) registrar sem precisar decodificar de novo. */
 export interface CompressedPhoto {
   blob: Blob;
   mimeType: string;
+  width: number;
+  height: number;
 }
 
 const JPEG_QUALITY = 0.7;
@@ -94,7 +96,8 @@ export function parseImageDimensionsFromHeader(bytes: Uint8Array): { width: numb
   return null; // formato não reconhecido
 }
 
-async function readImageDimensions(file: File): Promise<{ width: number; height: number } | null> {
+/** Exportada para a instrumentação de diagnóstico poder registrar a dimensão de entrada sem decodificar — mesma leitura de cabeçalho que `compressPhoto` já faz internamente. */
+export async function readImageDimensions(file: File): Promise<{ width: number; height: number } | null> {
   try {
     const buffer = await file.slice(0, HEADER_PEEK_BYTES).arrayBuffer();
     return parseImageDimensionsFromHeader(new Uint8Array(buffer));
@@ -164,9 +167,10 @@ async function compressWithImageBitmap(file: File, dims: { width: number; height
     resizeQuality: "high",
     imageOrientation: "from-image",
   });
+  const { width, height } = bitmap;
   const blob = await drawAndEncode(bitmap);
   if (!blob) throw new Error("Não foi possível comprimir a foto neste navegador.");
-  return { blob, mimeType: "image/jpeg" };
+  return { blob, mimeType: "image/jpeg", width, height };
 }
 
 /**
@@ -203,7 +207,7 @@ function compressWithCanvasImage(file: File): Promise<CompressedPhoto> {
             reject(new Error("Não foi possível comprimir a foto neste navegador."));
             return;
           }
-          resolve({ blob, mimeType: "image/jpeg" });
+          resolve({ blob, mimeType: "image/jpeg", width, height });
         },
         "image/jpeg",
         JPEG_QUALITY,
