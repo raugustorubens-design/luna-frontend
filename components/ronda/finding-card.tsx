@@ -400,8 +400,11 @@ export function FindingCard({
                 {compressing ? "…" : "+ Foto"}
               </button>
             </div>
-            {/* capture="environment" abre a câmera traseira nativa direto — input padrão do navegador, sem lib. */}
-            <input ref={fileInputRef} type="file" accept="image/*" capture="environment" multiple onChange={handlePhotoChange} className="hidden" />
+            {/* Sem `capture`: precisamos do seletor do navegador (Câmera/Galeria/Arquivos), não da
+                captura simples. `capture="environment"` pula o seletor e trava três coisas: não há
+                opção de galeria, a câmera abre sem os modos do app completo (panorâmica, vídeo) e o
+                app é despejado ao voltar da foto. NÃO reintroduzir `capture` aqui. */}
+            <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handlePhotoChange} className="hidden" />
             {photoError && <p className="text-red-400">{photoError}</p>}
           </div>
 
