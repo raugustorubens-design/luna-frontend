@@ -21,7 +21,7 @@ export const RISK_CATEGORIES = [
 ] as const;
 export type RiskCategory = (typeof RISK_CATEGORIES)[number];
 
-/** Rótulos legíveis pros 8 flags desta rodada (7 categorias + passivo trabalhista) — o catálogo real (`GET /convergia/ronda/flags`) só devolve `nome` (slug), o rótulo de exibição fica só no cliente, mesma convenção de `RISK_STATE_LABELS` abaixo. */
+/** Rótulos legíveis pros 9 flags desta rodada (7 categorias + passivo trabalhista + proteção contra incêndios) — o catálogo real (`GET /convergia/ronda/flags`) só devolve `nome` (slug), o rótulo de exibição fica só no cliente, mesma convenção de `RISK_STATE_LABELS` abaixo. */
 export const FLAG_LABELS: Record<string, string> = {
   trabalho_em_altura: "Trabalho em Altura",
   espaco_confinado: "Espaço Confinado",
@@ -31,6 +31,7 @@ export const FLAG_LABELS: Record<string, string> = {
   movimentacao_de_cargas: "Movimentação de Cargas",
   maquinas_e_equipamentos: "Máquinas e Equipamentos",
   passivo_trabalhista: "Passivo Trabalhista",
+  protecao_contra_incendios: "Proteção contra Incêndios",
 };
 
 export const RISK_STATES = ["nao_avaliado", "identificado", "inexistente"] as const;
