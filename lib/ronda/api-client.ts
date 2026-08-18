@@ -1,14 +1,6 @@
 import { LUNA_GATEWAY_BASE_URL } from "@/lib/forge/api-client";
-import type {
-  RondaSubmission,
-  RondaPatch,
-  RondaFlag,
-  RondaSuggestion,
-  RondaPhoto,
-  RondaFotoSugestao,
-  SuggestionCorrectionPayload,
-  ValidationIssue,
-} from "./types";
+import type { RondaSubmission, RondaPatch, RondaFlag, RondaSuggestion, RondaPhoto, RondaFotoSugestao, SuggestionCorrectionPayload } from "./types";
+import type { ValidationIssue } from "./issues";
 
 export interface RondaSubmitResult {
   rondaId: string;
@@ -20,7 +12,6 @@ export interface RondaSubmitResult {
 }
 
 export class RondaSubmitError extends Error {
-  /** Gate divergente de 17/08/2026: o 422 já trazia isto, mas a fila (`queue.ts`) descartava tudo além de `message` ao gravar o item como "invalid". Ver `db.ts`/`issues.ts`. */
   readonly issues?: ValidationIssue[];
   /** Status HTTP da resposta que gerou o erro — usado pela fila (queue.ts) pra distinguir rejeição definitiva do servidor (422, validação) de falha transiente (rede, 5xx), que continuam elegíveis a reenvio automático. */
   readonly status?: number;

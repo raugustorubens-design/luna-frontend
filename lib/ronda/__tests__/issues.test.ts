@@ -1,54 +1,107 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseIssuePath, classifyQueueRejection } from "../issues";
+import { parseIssuePath, mapIssuesToFindings, isOldFormatRejection, canDiscardInvalidItem } from "../issues";
+import { newFinding, type RondaFinding } from "../types";
 
-// Gate divergente de 17/08/2026 — GENESIS_2026-08-17_URGENTE_gate-ronda-divergente.md.
-
-test("parseIssuePath — caminho válido de campo obrigatório", () => {
+test("parseIssuePath parses a valid achado field path", () => {
   assert.deepEqual(parseIssuePath("achados.abc123.departamento"), { findingId: "abc123", field: "departamento" });
-  assert.deepEqual(parseIssuePath("achados.abc123.classificacao"), { findingId: "abc123", field: "classificacao" });
-  assert.deepEqual(parseIssuePath("achados.abc123.gravidade"), { findingId: "abc123", field: "gravidade" });
-  assert.deepEqual(parseIssuePath("achados.abc123.descricao"), { findingId: "abc123", field: "descricao" });
 });
 
-test("parseIssuePath — caminho de metadado não casa (não é achado nenhum)", () => {
+test("parseIssuePath returns null for a metadata path — not an achado field", () => {
   assert.equal(parseIssuePath("metadata.titulo"), null);
-  assert.equal(parseIssuePath("encerramento.observacoesGerais"), null);
+  assert.equal(parseIssuePath("achados"), null, "top-level achados issue (ex. duplicate id count) has no field to address");
 });
 
-test("parseIssuePath — caminho malformado devolve null em vez de lançar", () => {
-  assert.equal(parseIssuePath("achados"), null, "achados sem sufixo nenhum");
-  assert.equal(parseIssuePath("achados.abc"), null, "achados com id mas sem campo");
+test("parseIssuePath returns null for malformed paths", () => {
   assert.equal(parseIssuePath(""), null);
-  // Formato pré-migração (BUILDER.md 15/08): campo "id", não um dos 4 obrigatórios — não confundir com achado dinâmico.
-  assert.equal(parseIssuePath("achados.0.id"), null);
+  assert.equal(parseIssuePath("achados."), null, "empty rest after prefix");
+  assert.equal(parseIssuePath("achados.x."), null, "trailing dot, no field");
+  assert.equal(parseIssuePath("achados..departamento"), null, "empty findingId");
 });
 
-test("parseIssuePath — id de achado contendo ponto ainda é reconhecido, porque o campo é âncora do fim da string, não o próximo ponto", () => {
-  assert.deepEqual(parseIssuePath("achados.v1.2.3.descricao"), { findingId: "v1.2.3", field: "descricao" });
+test("parseIssuePath splits on the last dot — an achado id containing a dot is still parsed correctly", () => {
+  assert.deepEqual(parseIssuePath("achados.abc.def.descricao"), { findingId: "abc.def", field: "descricao" });
 });
 
-test("classifyQueueRejection — sem issues (ou vazio) é sempre unrecoverable, mesmo comportamento do fix de 15/08", () => {
-  assert.equal(classifyQueueRejection(undefined), "unrecoverable");
-  assert.equal(classifyQueueRejection([]), "unrecoverable");
+test("mapIssuesToFindings groups issues by achado id, field -> server message", () => {
+  const { byFinding, unmapped } = mapIssuesToFindings(
+    [
+      { path: "achados.f1.departamento", message: "departamento é obrigatório quando o risco foi identificado" },
+      { path: "achados.f1.descricao", message: "descrição é obrigatória quando o risco foi identificado" },
+      { path: "achados.f2.gravidade", message: "gravidade é obrigatória quando o risco foi identificado" },
+    ],
+    new Set(["f1", "f2"]),
+  );
+  assert.deepEqual(byFinding, {
+    f1: { departamento: "departamento é obrigatório quando o risco foi identificado", descricao: "descrição é obrigatória quando o risco foi identificado" },
+    f2: { gravidade: "gravidade é obrigatória quando o risco foi identificado" },
+  });
+  assert.deepEqual(unmapped, []);
 });
 
-test("classifyQueueRejection — toda issue mapeando pra um campo obrigatório é recoverable", () => {
-  const issues = [
-    { path: "achados.f1.departamento", message: "Required" },
-    { path: "achados.f1.descricao", message: "Required" },
+test("mapIssuesToFindings puts metadata issues and issues for an id not in the ronda into unmapped", () => {
+  const { byFinding, unmapped } = mapIssuesToFindings(
+    [
+      { path: "metadata.titulo", message: "título é obrigatório" },
+      { path: "achados.nao-existe-mais.descricao", message: "descrição é obrigatória quando o risco foi identificado" },
+    ],
+    new Set(["f1"]),
+  );
+  assert.deepEqual(byFinding, {});
+  assert.equal(unmapped.length, 2);
+});
+
+test("isOldFormatRejection is true when there are no stored issues — item went invalid before issues were persisted", () => {
+  assert.equal(isOldFormatRejection(undefined), true);
+  assert.equal(isOldFormatRejection([]), true);
+});
+
+test("isOldFormatRejection is true for a pre-migration payload — issue on achados.N.id", () => {
+  assert.equal(isOldFormatRejection([{ path: "achados.0.id", message: "Required" }]), true);
+});
+
+test("isOldFormatRejection is false for a recoverable rejection — issues on required fields, not id", () => {
+  assert.equal(
+    isOldFormatRejection([
+      { path: "achados.f1.departamento", message: "departamento é obrigatório quando o risco foi identificado" },
+      { path: "achados.f1.descricao", message: "descrição é obrigatória quando o risco foi identificado" },
+    ]),
+    false,
+  );
+});
+
+/**
+ * Achado 2 da revisão da branch: `isOldFormatRejection` usa `.some()`, então
+ * um payload misto (uma issue de campo real + uma de `achados.N.id`) já
+ * classifica como "formato antigo" na mensagem — mas `canDiscardInvalidItem`
+ * precisa ser mais conservador, porque ainda há um campo corrigível na tela.
+ */
+test("canDiscardInvalidItem is false when nothing is missing per the client gate but a server issue still maps to a loaded finding — even in a mixed payload with an id issue too", () => {
+  const achado = newFinding("trabalho_em_altura", { id: "f1" }); // identificado, tudo vazio ainda no cliente (não usado aqui — issues do servidor é que decidem)
+  const achados: RondaFinding[] = [{ ...achado, departamento: "Manutenção", classificacao: "atencao", gravidade: "baixa", descricao: "ok" }];
+  const mixedIssues = [
+    { path: "achados.f1.departamento", message: "departamento é obrigatório quando o risco foi identificado" },
+    { path: "achados.0.id", message: "Required" },
   ];
-  assert.equal(classifyQueueRejection(issues), "recoverable");
+  assert.equal(canDiscardInvalidItem(achados, mixedIssues), false);
 });
 
-test("classifyQueueRejection — formato pré-migração (achados.N.id) é unrecoverable", () => {
-  assert.equal(classifyQueueRejection([{ path: "achados.0.id", message: "Required" }]), "unrecoverable");
+test("canDiscardInvalidItem is false when the client gate itself finds a missing field, regardless of issues", () => {
+  const incomplete = [newFinding("trabalho_em_altura", { id: "f1", classificacao: "atencao" })]; // sem departamento/gravidade/descricao
+  assert.equal(canDiscardInvalidItem(incomplete, undefined), false);
 });
 
-test("classifyQueueRejection — mistura de issue mapeável e não mapeável fica unrecoverable, por segurança", () => {
-  const issues = [
-    { path: "achados.f1.departamento", message: "Required" },
-    { path: "metadata.titulo", message: "Required" },
-  ];
-  assert.equal(classifyQueueRejection(issues), "unrecoverable");
+test("canDiscardInvalidItem is true only when there's truly nothing to fix here — no client-side missing field and no issue maps to a loaded achado", () => {
+  const complete = [newFinding("trabalho_em_altura", { id: "f1", departamento: "Manutenção", classificacao: "atencao", gravidade: "baixa", descricao: "ok" })];
+  assert.equal(canDiscardInvalidItem(complete, undefined), true, "no issues at all, nothing missing client-side — genuinely stuck, pre-migration item");
+  assert.equal(
+    canDiscardInvalidItem(complete, [{ path: "achados.0.id", message: "Required" }]),
+    true,
+    "old-format issue that doesn't address any currently-loaded achado",
+  );
+  assert.equal(
+    canDiscardInvalidItem(complete, [{ path: "achados.f1.departamento", message: "departamento é obrigatório quando o risco foi identificado" }]),
+    false,
+    "issue maps to a real, currently-loaded field — still fixable",
+  );
 });

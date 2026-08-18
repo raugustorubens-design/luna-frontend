@@ -10,10 +10,11 @@
  * a superfície usada aqui é pequena o bastante (dois stores, chave simples)
  * para não justificar uma dependência nova só para isto.
  */
-import type { RondaSubmission, RondaMetadata, RondaFinding, RondaClosing, SuggestionRecord, ValidationIssue } from "./types";
+import type { RondaSubmission, RondaMetadata, RondaFinding, RondaClosing, SuggestionRecord } from "./types";
+import type { ValidationIssue } from "./issues";
 
 const DB_NAME = "luna-ronda";
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const STORE = "queue";
 /**
  * Rascunho da ronda em andamento (achado de campo, 16/08/2026): até aqui o
@@ -68,6 +69,19 @@ const ORIGINAL_PHOTOS_STORE = "originalPhotos";
  * histórico offline por um milésimo do espaço.
  */
 const HISTORY_STORE = "history";
+/**
+ * Rastro do pipeline de foto — comprimir, subir, sugerir — que hoje some
+ * junto com a aba quando o app é descartado no meio: a Promise nunca
+ * resolve nem rejeita, porque a aba já não existe. Sem erro na tela, sem
+ * falha de rede, sem nada em log de servidor (o mesmo defeito que levou uma
+ * investigação inteira ao caminho errado, ver `BUILDER.md`, 18/08/2026).
+ *
+ * Puramente diagnóstico, não histórico — ver `lib/ronda/diagnostics.ts`
+ * para a leitura/limpeza. Um "started"/"requested" sem o "completed"/
+ * "failed" correspondente, encontrado numa sessão anterior à atual, é a
+ * prova do descarte de aba: o único rastro que esse defeito deixa.
+ */
+const DIAGNOSTICS_STORE = "diagnostics";
 
 /**
  * "invalid" (distinto de "error"): o servidor rejeitou o envio por
@@ -89,15 +103,7 @@ export interface QueueItem {
   syncedAt?: string;
   serverRondaId?: string;
   lastError?: string;
-  /**
-   * Gate divergente de 17/08/2026: os problemas que o 422 devolveu, gravados
-   * junto do item "invalid" — antes só `lastError` (a mensagem genérica)
-   * sobrevivia, e a tela de edição não tinha como acender o campo certo no
-   * achado certo. Campo novo, não store novo — nenhuma migração de schema é
-   * necessária (`IDBObjectStore` não valida forma de registro); item antigo
-   * sem `issues` continua um `QueueItem` válido e cai no caminho de mensagem
-   * genérica em `ronda-editor.tsx`.
-   */
+  /** `issues` do 422 que gerou `lastError`, quando `status === "invalid"` — ausente num item que caiu em "invalid" antes desta correção existir; `RondaEditor` cai de volta no gate do cliente nesse caso (ver `lib/ronda/issues.ts`). */
   issues?: ValidationIssue[];
   attempts: number;
 }
@@ -145,6 +151,9 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(HISTORY_STORE)) {
         db.createObjectStore(HISTORY_STORE, { keyPath: "rondaId" });
       }
+      if (!db.objectStoreNames.contains(DIAGNOSTICS_STORE)) {
+        db.createObjectStore(DIAGNOSTICS_STORE, { keyPath: "key", autoIncrement: true });
+      }
       // v4: as originais deixaram de ser base64 e passaram a ser `Blob`. Os
       // registros antigos são descartados no lugar de convertidos, e isso é
       // seguro de afirmar: o store nunca teve um leitor
@@ -175,7 +184,8 @@ function runTransaction<T>(storeName: string, mode: IDBTransactionMode, fn: (sto
   );
 }
 
-function newLocalId(): string {
+/** Exportada para servir também de `sessionId`/`correlationId` na instrumentação de diagnóstico (`lib/ronda/diagnostics.ts`) — mesma necessidade de um id local, sem round-trip ao servidor. */
+export function newLocalId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `local_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
@@ -258,9 +268,8 @@ export async function getQueueItem(localId: string): Promise<QueueItem | null> {
  *
  * Voltar para `pending` é o ponto do método: editar um item que o servidor
  * rejeitou (`invalid`) só tem sentido se a edição o recolocar na fila de
- * reenvio. `lastError` e `issues` são limpos junto — descreviam o payload
- * antigo, mantê-los faria a tela acusar um problema que a edição pode ter
- * resolvido.
+ * reenvio. `lastError` é limpo junto — o erro descrevia o payload antigo,
+ * mantê-lo faria a tela acusar um problema que a edição pode ter resolvido.
  */
 export async function updateQueueSubmission(localId: string, submission: RondaSubmission): Promise<void> {
   await updateQueueItem(localId, { submission, status: "pending", lastError: undefined, issues: undefined });
@@ -412,5 +421,77 @@ export async function clearDraft(): Promise<void> {
     await runTransaction(DRAFT_STORE, "readwrite", (store) => store.delete(DRAFT_KEY));
   } catch (error) {
     console.warn("[ronda] falha ao apagar o rascunho local", error);
+  }
+}
+
+export type DiagnosticEventKind =
+  | "compression_started"
+  | "compression_completed"
+  | "upload_requested"
+  | "upload_completed"
+  | "upload_failed"
+  | "suggestion_requested"
+  | "suggestion_answered"
+  | "suggestion_failed";
+
+/**
+ * `sessionId` é o mesmo em todo evento de uma abertura do app —
+ * `lib/ronda/diagnostics.ts` usa isso pra separar "sessão anterior" (o que
+ * a tela mostra) de "sessão em andamento" (ainda não terminou, contagem não
+ * é definitiva). `correlationId` liga início e fim de uma mesma operação: o
+ * id da foto para compressão/upload, o id do achado para sugestão.
+ */
+export interface DiagnosticEvent {
+  key?: number;
+  sessionId: string;
+  kind: DiagnosticEventKind;
+  correlationId: string;
+  at: string;
+  inputSizeBytes?: number;
+  inputWidth?: number | null;
+  inputHeight?: number | null;
+  outputSizeBytes?: number;
+  outputWidth?: number;
+  outputHeight?: number;
+  durationMs?: number;
+  sizeBytes?: number;
+  reason?: string;
+}
+
+/** Nunca lança — perder um evento de diagnóstico não pode derrubar o fluxo que ele só observa. */
+export async function addDiagnosticEvent(event: Omit<DiagnosticEvent, "key">): Promise<void> {
+  try {
+    await runTransaction(DIAGNOSTICS_STORE, "readwrite", (store) => store.add(event));
+  } catch (error) {
+    console.warn("[ronda] falha ao gravar evento de diagnóstico", error);
+  }
+}
+
+export async function listDiagnosticEvents(): Promise<DiagnosticEvent[]> {
+  try {
+    return await runTransaction<DiagnosticEvent[]>(DIAGNOSTICS_STORE, "readonly", (store) => store.getAll());
+  } catch (error) {
+    console.warn("[ronda] falha ao ler eventos de diagnóstico", error);
+    return [];
+  }
+}
+
+/** Descarta eventos já sem valor diagnóstico — ver `lib/ronda/diagnostics.ts` pro critério. Sem isso, este store vira o mesmo acúmulo sem limite já corrigido uma vez nas fotos originais (`discardRondaLocalCopies`, acima). */
+export async function deleteDiagnosticEvents(keys: number[]): Promise<void> {
+  if (keys.length === 0) return;
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(DIAGNOSTICS_STORE, "readwrite");
+      const store = tx.objectStore(DIAGNOSTICS_STORE);
+      for (const key of keys) store.delete(key);
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (error) {
+    console.warn("[ronda] falha ao limpar eventos de diagnóstico", error);
   }
 }

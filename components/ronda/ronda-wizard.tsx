@@ -10,18 +10,17 @@ import {
   pendingFindings,
   findingsWithMissingFields,
   findingTitle,
-  MISSING_FIELD_LABELS,
   newFinding,
   duplicateFinding,
   diffSuggestionFields,
   FLAG_LABELS,
+  MISSING_FIELD_LABELS,
   type RondaMetadata,
   type RondaFinding,
   type RondaClosing,
   type RondaFlag,
   type RondaSuggestion,
   type SuggestionRecord,
-  type MissingField,
 } from "@/lib/ronda/types";
 import { getFlags, getSugestoes, postCorrecaoSugestao, RondaSubmitError } from "@/lib/ronda/api-client";
 import { enqueueRonda, loadDraft, saveDraft, clearDraft } from "@/lib/ronda/db";
@@ -33,9 +32,8 @@ import { ThemeToggle } from "./theme-toggle";
 
 type Step = "A" | "B" | "C" | "done";
 
-/** "departamento, classificação e descrição" — lista em português natural, não uma contagem. */
-function formatMissingFieldList(missing: MissingField[]): string {
-  const labels = missing.map((field) => MISSING_FIELD_LABELS[field]);
+/** "departamento e descrição" / "departamento, classificação e descrição" — nomeia os campos por extenso, nunca uma contagem (a mesma exigência que levou este aviso a existir). */
+function formatFieldList(labels: string[]): string {
   if (labels.length <= 1) return labels.join("");
   return `${labels.slice(0, -1).join(", ")} e ${labels[labels.length - 1]}`;
 }
@@ -163,14 +161,8 @@ export function RondaWizard() {
   }, []);
 
   const pending = useMemo(() => pendingFindings(findings), [findings]);
-  // Gate divergente de 17/08/2026: "Concluir ronda" só travava em achado
-  // "não avaliado" — nunca nos quatro campos que o servidor exige quando um
-  // achado está "identificado" (`requiredWhenIdentified` em
-  // `luna-core/src/convergia/ronda/validation.ts`). A ronda passava aqui,
-  // entrava na fila e o servidor recusava com 422. Soma as duas condições —
-  // espelha exatamente o que o servidor valida, não afrouxa nem o servidor.
-  const incomplete = useMemo(() => findingsWithMissingFields(findings), [findings]);
-  const canConclude = pending.length === 0 && incomplete.length === 0;
+  const missingFieldsList = useMemo(() => findingsWithMissingFields(findings), [findings]);
+  const canConclude = pending.length === 0 && missingFieldsList.length === 0;
 
   /**
    * `data` fica de fora de propósito: `emptyMetadata()` já nasce com a data
@@ -350,8 +342,21 @@ export function RondaWizard() {
       <main className="ronda-scroll-pad min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
         {draftRecovered && step !== "done" && (
           <div className="mb-3 flex items-start justify-between gap-3 rounded border border-cyan-500/40 bg-cyan-500/10 p-2.5 text-xs text-cyan-800 dark:text-cyan-300">
+            {/*
+              Antes esta mensagem afirmava "nada do que você já tinha
+              preenchido se perdeu" — e é exatamente quando uma foto se perde
+              (app derrubado no meio da captura/compressão, antes do autosave
+              seguinte gravar o rascunho) que esta tela aparece. O rascunho
+              recupera o que já tinha sido salvo até o último autosave — não
+              tem como saber, hoje, se havia uma foto em processamento no
+              instante da queda (esse rastro é o que a instrumentação de
+              IndexedDB de uma etapa futura vai deixar). Até lá, a mensagem
+              não promete o que não sabe: pede pra conferir foto por foto.
+            */}
             <p>
-              Ronda em andamento recuperada deste aparelho — nada do que você já tinha preenchido se perdeu.
+              Ronda em andamento recuperada deste aparelho, com os dados até o último salvamento automático.
+              Confira as fotos de cada achado — uma foto sendo processada no momento em que o app fechou
+              pode não ter sido salva.
               <button type="button" onClick={startNewRonda} className="ml-2 underline">
                 Começar do zero
               </button>
@@ -491,23 +496,14 @@ export function RondaWizard() {
                 {pending.length > 0 && (
                   <p className="mb-1 font-medium">Ainda há {pending.length} achado(s) marcado(s) como &quot;não avaliado&quot; — revise antes de concluir.</p>
                 )}
-                {/*
-                  Gate divergente de 17/08/2026: nomeia o achado e os campos
-                  que faltam, nunca só uma contagem — é o que faltava na tela
-                  de erro do servidor que deixou uma ronda real presa em
-                  campo sem ninguém saber o que corrigir.
-                */}
-                {incomplete.length > 0 && (
-                  <div className={pending.length > 0 ? "mt-2" : undefined}>
-                    <p className="mb-1 font-medium">Faltam campos obrigatórios:</p>
-                    <ul className="list-disc pl-4">
-                      {incomplete.map(({ finding, missing }) => (
-                        <li key={finding.id}>
-                          {findingTitle(finding)} — falta {formatMissingFieldList(missing)}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                {missingFieldsList.length > 0 && (
+                  <ul className="list-disc space-y-0.5 pl-4">
+                    {missingFieldsList.map(({ finding, missing }) => (
+                      <li key={finding.id}>
+                        {findingTitle(finding)} — falta {formatFieldList(missing.map((field) => MISSING_FIELD_LABELS[field]))}
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </div>
             )}

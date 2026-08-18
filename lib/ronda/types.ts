@@ -31,12 +31,11 @@ export const FLAG_LABELS: Record<string, string> = {
   movimentacao_de_cargas: "Movimentação de Cargas",
   maquinas_e_equipamentos: "Máquinas e Equipamentos",
   passivo_trabalhista: "Passivo Trabalhista",
+  // Flag nova no catálogo do servidor (`GET /convergia/ronda/flags`), sem
+  // entrada aqui ainda — aparecia com a chave crua ("protecao_contra_incendios")
+  // na Etapa 2 do wizard, entre "Passivo Trabalhista" e o rodapé.
+  protecao_contra_incendios: "Proteção contra Incêndios",
 };
-
-/** Título de exibição de um achado — mesma regra usada em `FindingCard` e agora também no aviso de campos faltando do wizard, centralizada aqui para as duas leituras não divergirem. */
-export function findingTitle(finding: Pick<RondaFinding, "flagId">): string {
-  return (finding.flagId && FLAG_LABELS[finding.flagId]) || "Achado manual";
-}
 
 export const RISK_STATES = ["nao_avaliado", "identificado", "inexistente"] as const;
 export type RiskState = (typeof RISK_STATES)[number];
@@ -224,19 +223,11 @@ export function pendingFindings(findings: RondaFinding[]): RondaFinding[] {
   return findings.filter((finding) => finding.estado === "nao_avaliado");
 }
 
-/**
- * Espelha `requiredWhenIdentified()` de `luna-core/src/convergia/ronda/validation.ts`
- * — mesmo nome, mesma regra, do lado do cliente. Achado do gate divergente
- * de 17/08/2026: o wizard só travava em `pendingFindings` (achado
- * "não avaliado"), nunca nesses quatro campos — a ronda passava no cliente,
- * entrava na fila e o servidor recusava com 422, sem ninguém saber o quê
- * faltava até este espelho existir.
- *
- * Foto fica de fora, deliberadamente — igual ao servidor. Não é "ainda não
- * espelhado", é a regra: o comentário do lado do servidor registra que
- * exigir foto foi correção de usabilidade sobre a ferramenta real da
- * Manserv. Não reintroduza aqui.
- */
+/** Título de exibição de um achado — flag de origem, ou "Achado manual" para os que nasceram do "+" avulso. Mesma regra usada no cabeçalho do `FindingCard`, extraída aqui para não duplicar em quem lista achados fora do card (aviso de campo faltando na Etapa C). */
+export function findingTitle(finding: RondaFinding): string {
+  return (finding.flagId && FLAG_LABELS[finding.flagId]) || "Achado manual";
+}
+
 export type MissingField = "departamento" | "classificacao" | "gravidade" | "descricao";
 
 export const MISSING_FIELD_LABELS: Record<MissingField, string> = {
@@ -246,27 +237,26 @@ export const MISSING_FIELD_LABELS: Record<MissingField, string> = {
   descricao: "descrição",
 };
 
-export function missingRequiredWhenIdentified(f: RondaFinding): MissingField[] {
-  if (f.estado !== "identificado") return [];
-  const out: MissingField[] = [];
-  if (!f.departamento) out.push("departamento");
-  if (!f.classificacao) out.push("classificacao");
-  if (!f.gravidade) out.push("gravidade");
-  if (!f.descricao) out.push("descricao");
-  return out;
-}
-
-export function findingsWithMissingFields(fs: RondaFinding[]) {
-  return fs.map((f) => ({ finding: f, missing: missingRequiredWhenIdentified(f) })).filter((r) => r.missing.length > 0);
-}
-
 /**
- * Um problema do array `issues` que o 422 de validação devolve
- * (`{"error":"...","issues":[{"path":"achados.0.id","message":"Required"}]}`,
- * confirmado no `BUILDER.md` de 15/08). `path` é contrato do servidor —
- * `lib/ronda/issues.ts` é quem sabe traduzi-lo, tolerando formato que muda.
+ * Espelha `requiredWhenIdentified` de `luna-core/src/convergia/ronda/validation.ts`
+ * — mesmo nome, mesma regra, mesmos 4 campos. Existe para o gate do cliente
+ * (`pendingFindings` sozinho não bastava: só olhava "não avaliado", nunca os
+ * campos obrigatórios de um achado já "identificado") não deixar passar o
+ * que o servidor recusa. Foto fica de fora de propósito, em todo estado —
+ * correção de usabilidade sobre a ferramenta real da Manserv, não
+ * reintroduzir.
  */
-export interface ValidationIssue {
-  path: string;
-  message: string;
+export function missingRequiredWhenIdentified(finding: RondaFinding): MissingField[] {
+  if (finding.estado !== "identificado") return [];
+  const missing: MissingField[] = [];
+  if (!finding.departamento) missing.push("departamento");
+  if (!finding.classificacao) missing.push("classificacao");
+  if (!finding.gravidade) missing.push("gravidade");
+  if (!finding.descricao) missing.push("descricao");
+  return missing;
+}
+
+/** Achados "identificado" com pelo menos um campo obrigatório faltando — usado pelo gate de "Concluir ronda" e pelo aviso da Etapa C, que precisa nomear achado e campos (nunca só uma contagem). */
+export function findingsWithMissingFields(findings: RondaFinding[]): Array<{ finding: RondaFinding; missing: MissingField[] }> {
+  return findings.map((finding) => ({ finding, missing: missingRequiredWhenIdentified(finding) })).filter((entry) => entry.missing.length > 0);
 }

@@ -1514,133 +1514,8 @@ cada ronda antiga listada ali e descartar o item.
   correta pro contrato atual; decidido não "fazer o 422 sumir" mudando o
   que o servidor aceita.
 
-## 2026-08-17 — Fix urgente: gate do wizard divergia do servidor — ronda real do Sylvamo presa em campo com duas fotos só naquele aparelho
 
-### Achado
-
-Pacote `GENESIS_2026-08-17_URGENTE_gate-ronda-divergente.md`: em produção,
-17/08 às 13:58, uma ronda real (Sylvamo — LOGISTICA MG, Turno B) foi
-rejeitada com `422` ("Envio de ronda reprovado na validação (6
-problema(s))") e caiu em `"invalid"` na fila do dispositivo do Architect.
-A tela de edição não dizia quais eram os 6 problemas e mostrava duas
-instruções contraditórias na mesma caixa ("Refaça esta ronda e descarte
-este item" ao lado de "Corrija o que estiver faltando abaixo e salve").
-
-### Causa raiz
-
-`luna-core/src/convergia/ronda/validation.ts` (`requiredWhenIdentified`)
-exige `departamento`, `classificacao`, `gravidade` e `descricao` em todo
-achado `identificado` — regra correta, não alterada aqui. O gate do
-cliente (`pendingFindings` em `ronda-wizard.tsx`) só verificava achado
-`"nao_avaliado"`, nunca esses quatro campos: "Concluir ronda" habilitava,
-a ronda entrava na fila, subia, e o servidor recusava com `422` — sempre
-depois do fato, nunca antes.
-
-### O que mudou
-
-1. **`lib/ronda/types.ts`** — `missingRequiredWhenIdentified(finding)` e
-   `findingsWithMissingFields(findings)`, espelhando
-   `requiredWhenIdentified()` do servidor, mesmo nome. Foto fica de fora,
-   deliberadamente (já era assim do lado do servidor). `ValidationIssue`
-   nomeado (antes um tipo inline em `RondaSubmitError`).
-2. **`ronda-wizard.tsx`** — `canConclude` soma `pendingFindings` e
-   `findingsWithMissingFields`; o aviso na Etapa C nomeia o achado e os
-   campos ("Achado manual — falta departamento e descrição"), nunca uma
-   contagem.
-3. **`finding-card.tsx`** — os quatro campos ganham marcação âmbar
-   enquanto vazios e o achado está `identificado`, mesmo tratamento visual
-   de `lowConfidenceFields` (sugestão incerta da IA), unificados numa
-   função só (`fieldNotice`) pra não duplicar a lógica quatro vezes.
-   `serverIssues` (prop nova, opcional) deixa a mensagem real do servidor
-   substituir o texto genérico quando disponível.
-4. **`lib/ronda/issues.ts`** (novo) — `parseIssuePath` traduz
-   `achados.{id}.{campo}` → `{ findingId, field }`, tolerante a formato
-   que muda; `classifyQueueRejection` decide entre `"recoverable"`
-   (toda issue mapeia pra um dos 4 campos) e `"unrecoverable"` (formato
-   pré-migração ou sem `issues`).
-5. **`api-client.ts`** / **`db.ts`** / **`queue.ts`** — `RondaSubmitError.issues`
-   agora sobrevive até o registro `"invalid"` da fila (`QueueItem.issues`,
-   campo novo, sem migração de schema — `IDBObjectStore` não valida forma
-   de registro). `queue.ts` escolhe a mensagem certa na hora da rejeição
-   (`classifyQueueRejection`), em vez do texto único que combinava as duas
-   instruções.
-6. **`ronda-editor.tsx`** — `serverIssues` por achado (de `queueIssues`,
-   via `splitIssues`); issues sem achado correspondente aparecem numa
-   lista à parte, com o texto do servidor. O parágrafo extra "corrija
-   abaixo e salve" só aparece quando **não há** `issues` guardadas (Etapa
-   4, rede de segurança pra item preso antes desta correção) — com
-   `issues` frescas, `lastError` já é a mensagem definitiva e um segundo
-   parágrafo duplicaria a instrução (bug achado e corrigido durante a
-   própria verificação desta entrada, ver abaixo). Botão "Descartar"
-   escondido quando o item é `"invalid"` e recuperável.
-7. **`queue-status-bar.tsx`** — mesma classificação aplicada à barra que
-   aparece no topo do wizard (a primeira coisa visível ao abrir `/ronda`):
-   trocou o texto que presumia "formato antigo" para todo item `"invalid"`
-   por um link "Corrigir" (pra `/ronda/fila/[localId]`) nos recuperáveis e
-   "Descartar" só nos genuinamente irrecuperáveis.
-
-### Verificação — o que foi verificado neste ambiente
-
-1. `pnpm typecheck` — limpo.
-2. `pnpm test` — **70 testes** (eram 56; 14 novos, nenhum alterado ou
-   removido): `missingRequiredWhenIdentified` (achado não-identificado,
-   completo, e o caso exato de 17/08 — departamento e descrição vazios com
-   classificação e gravidade preenchidas), a regra de foto nunca aparecer
-   na lista travada em teste, `findingsWithMissingFields`,
-   `duplicateFinding` propagando incompletude, `parseIssuePath` (caminho
-   válido, de metadado, malformado, id com ponto) e `classifyQueueRejection`
-   (sem issues, todas mapeáveis, formato pré-migração, mistura).
-3. `pnpm run test:constitution` — limpo (98 arquivos).
-4. `pnpm build` — limpo.
-5. **Ponta a ponta real no wizard, via Playwright contra `pnpm dev`**
-   (sem backend — o Catálogo de flags falha ao carregar, "Achado avulso"
-   funciona sem ele): Etapa A preenchida, achado manual deixado incompleto
-   → "Concluir LUNA Safety Walk" **confirmado desabilitado**, aviso nomeia
-   "Achado manual — falta departamento, classificação, gravidade e
-   descrição", os quatro campos acendem âmbar no card. Preenchidos os
-   quatro → aviso some, botão **confirmado habilitado**.
-6. **Editor de item de fila, via IndexedDB seedado diretamente** (mesmo
-   motivo: sem backend real disponível neste ambiente pra produzir um 422
-   de verdade) — três cenários:
-   - Item `"invalid"` com `issues` frescas (pós-fix): campos acendem com o
-     texto real do servidor ("Required"), botão Descartar ausente, uma
-     única instrução na caixa (achado e corrigido: a primeira versão
-     duplicava "corrija abaixo e salve" mesmo já vindo em `lastError` —
-     ver item 6 de "O que mudou").
-   - Item `"invalid"` **sem** `issues` (simulando um item preso *antes*
-     desta correção) com achado localmente incompleto: rede de segurança
-     da Etapa 1 confirmada — campos acendem (texto genérico, sem
-     `serverIssues`), mensagem histórica contraditória preservada tal
-     qual (não reescrita) e seguida da instrução corrigida, Descartar
-     ausente.
-   - Item `"invalid"` sem `issues` e sem campo faltando localmente:
-     classificado `unrecoverable`, uma instrução só, Descartar presente.
-   - Mesmos três cenários confirmados também na barra de status do topo
-     do wizard (`queue-status-bar.tsx`): link "Corrigir" nos dois
-     recuperáveis, "Descartar" no irrecuperável; clique em "Corrigir"
-     confirmado navegando pra `/ronda/fila/[localId]`.
-
-### O que NÃO foi verificado (reportado sem confirmação)
-
-- **A ronda real do Sylvamo, no aparelho do Architect.** Este ambiente não
-  tem acesso ao dispositivo nem ao backend de produção (`luna-core`
-  reachable) — não foi possível reproduzir o `422` real nem confirmar que
-  a ronda específica de 17/08 sobe depois do fix. **Portão real, do
-  próprio pacote:** só fecha quando o Architect abrir `/ronda` → "Ver
-  rondas anteriores" → a ronda recusada, ver os campos acesos, preencher,
-  salvar e confirmar que ela sobe.
-- Round-trip real contra `luna-core` (POST /convergia/ronda com achado
-  incompleto de propósito, confirmando `422` com `issues` no formato
-  atual) — sem backend acessível neste ambiente. A forma do `issues`
-  (`achados.{id}.{campo}`) foi assumida a partir do exemplo do próprio
-  pacote e do `BUILDER.md` de 15/08, não capturada de novo agora.
-
-### O que este pacote não faz (herdado do pedido original, confirmado respeitado)
-
-- Não afrouxa a validação do servidor.
-- Não torna foto obrigatória, em nenhum estado (travado em teste).
-- Não migra formato antigo.
-- Não toca em `app/forge/`, `components/forge/` nem `app/page.tsx`.
+---
 
 ## 2026-08-17 — Revisão do Engenheiro (`luna-frontend#28`): regex de `constitution-check.mjs` generalizada por família de módulo
 
@@ -1681,3 +1556,458 @@ tipifica.
   do `test`.
 - `pnpm run test:constitution` — limpo, 98 arquivos.
 - `pnpm build` — limpo.
+
+---
+
+## 2026-08-17 — Fix urgente: gate do wizard divergia do servidor — ronda do Sylvamo presa em campo com 6 problemas não nomeados e instrução contraditória
+
+### Causa raiz
+
+`pendingFindings` (o único gate que "Concluir ronda" checava) só olhava
+`estado === "nao_avaliado"`. Não replicava `requiredWhenIdentified` de
+`luna-core/src/convergia/ronda/validation.ts` — que exige `departamento`,
+`classificacao`, `gravidade` e `descricao` em todo achado `identificado`.
+Resultado real, capturado em campo (Sylvamo — LOGISTICA MG, turno B,
+17/08 13:58): um achado com departamento vazio passou pelo wizard, subiu,
+levou 422 ("Envio de ronda reprovado na validação (6 problema(s))."), e a
+tela de edição da fila (`ronda-editor.tsx`) não mostrava quais 6 —
+só o texto genérico do servidor, seguido por duas instruções que se
+contradiziam: "Refaça esta ronda e descarte este item da fila" (herdada
+do fix de 15/08, que só se aplica a payload pré-migração sem `id`) ao
+lado de "Corrija o que estiver faltando abaixo e salve" (hardcoded,
+sempre mostrada, mesmo quando a primeira instrução já mandou descartar).
+
+### O que mudou
+
+1. **`lib/ronda/types.ts`** — `missingRequiredWhenIdentified(finding)`,
+   espelho de `requiredWhenIdentified` do servidor (mesmos 4 campos, foto
+   fora de propósito, em todo estado). `findingsWithMissingFields(findings)`
+   agrega pra UI. `findingTitle(finding)` extraído do que já existia em
+   `FindingCard` (flag ou "Achado manual"), reaproveitado no aviso da
+   Etapa C.
+2. **`ronda-wizard.tsx`** — `canConclude` passa a exigir também
+   `findingsWithMissingFields(findings).length === 0`. O aviso da Etapa C
+   lista cada achado incompleto nomeado, com os campos por extenso
+   ("Achado manual — falta departamento e descrição"), nunca uma
+   contagem.
+3. **`finding-card.tsx`** — os 4 campos obrigatórios ganham a mesma
+   marcação âmbar que a Fase 4 já usa para `camposIncertos` (nenhum
+   padrão novo) enquanto vazios num achado `identificado`. Novo prop
+   opcional `serverIssues` (campo → mensagem real do servidor) sobrepõe o
+   texto genérico quando disponível. Duplicar um achado incompleto
+   (`+ Duplicar`, de 15/08) preserva os campos faltando — coberto em
+   teste, não é caso especial em lugar nenhum do código.
+4. **`lib/ronda/issues.ts`** (novo) — `parseIssuePath` traduz
+   `achados.{id}.{campo}` (separando pelo **último** ponto, não o
+   primeiro — sobrevive a um id de achado que contenha ponto);
+   `mapIssuesToFindings` agrupa por achado + lista o que não mapeia
+   (metadado, achado que não existe mais localmente); `isOldFormatRejection`
+   decide "formato antigo, irrecuperável" (issue em `.id`, ou nenhuma
+   issue guardada) vs. "campo faltando, recuperável".
+5. **`api-client.ts`** — `RondaSubmitError.issues` tipado com o
+   `ValidationIssue` novo (já existia como shape inline; não mudou
+   comportamento, só nomeou o tipo pra `db.ts` reaproveitar).
+6. **`db.ts`** — `QueueItem.issues?: ValidationIssue[]`, gravado junto do
+   `lastError`. Sem bump de `DB_VERSION`: é campo novo opcional num
+   registro já existente, não store/index novo — IndexedDB não tem
+   schema por campo, então nenhuma migração é necessária pra um item
+   antigo (sem `issues`) continuar válido. `updateQueueSubmission` limpa
+   `issues` junto do `lastError` — mesma lógica que já limpava o segundo.
+7. **`queue.ts`** — `lastError` deixou de embutir a instrução ("refaça e
+   descarte"/"corrija e salve"); guarda só o que aconteceu. A decisão do
+   que dizer passou pra `ronda-editor.tsx`, que tem o que
+   `queue.ts` não tem: o conteúdo carregado (pro gate do cliente) e,
+   quando disponível, as `issues` do servidor.
+8. **`ronda-editor.tsx`** — a contradição virou uma escolha: `isOldFormat`
+   é `true` só quando o gate do cliente (`findingsWithMissingFields` sobre
+   o `findings` já carregado) não acha nada de faltando **e**
+   `isOldFormatRejection(queueIssues)` também não acha sinal de campo
+   recuperável — nessa ordem, de propósito: um item `"invalid"` de antes
+   desta correção não tem `issues` guardada, e é o gate do cliente sozinho
+   quem resolve esse caso (não precisa do servidor ter falado nada).
+   Formato antigo mostra "não dá pra recuperar, descarte"; campo faltando
+   mostra "corrija abaixo e salve" — nunca as duas juntas. Issues que não
+   mapeiam pra um achado da ronda carregada aparecem numa lista própria,
+   com o texto do servidor. Cada `FindingCard` recebe as issues do próprio
+   achado via `serverIssues`. Nenhum botão de descartar foi removido nem
+   escondido (regra do pacote: só acréscimo) — o existente já avisa
+   claramente que a ronda não enviada se perde.
+
+### Verificação
+
+1. `pnpm typecheck`, `pnpm test` (72/72 — todos os 56 anteriores intactos,
+   16 novos: `missingRequiredWhenIdentified`/`findingsWithMissingFields`
+   em `types.test.ts`, `parseIssuePath`/`mapIssuesToFindings`/
+   `isOldFormatRejection` em `issues.test.ts`, novo), `pnpm run
+   test:constitution`, `pnpm build` — todos limpos neste ambiente.
+2. **Ponta a ponta real, via Playwright contra o wizard real (`/ronda`,
+   `pnpm dev` local com `NEXT_PUBLIC_LUNA_GATEWAY_BASE_URL` apontado pro
+   Gateway de produção)**: Etapa A completa, achado manual com
+   classificação/gravidade/descrição preenchidas e departamento vazio de
+   propósito → "Concluir LUNA Safety Walk" confirmado **desabilitado**,
+   aviso confirmado com o texto exato "Achado manual — falta
+   departamento". Preenchido o departamento → botão confirmado
+   **habilitado**. Este trecho não depende de rede (o gate roda inteiro
+   no cliente) e rodou de ponta a ponta no navegador real.
+3. **Achado neste ambiente, registrado com honestidade**: o Chromium
+   deste sandbox não conseguiu alcançar hosts externos (Railway) nem
+   configurando `--proxy-server` pro proxy do agente — `curl`/`fetch` do
+   Node atravessam o proxy normalmente (confirmado, `GET
+   /convergia/ronda/flags` via curl funcionou), mas o processo do
+   Chromium recebe `ERR_CONNECTION_RESET` mesmo com a mesma URL, sem
+   nenhuma falha registrada em `/__agentproxy/status` — o pedido não
+   chega a sair do processo do navegador. Não foi possível, portanto,
+   observar o `POST /convergia/ronda` disparado pelo clique real no botão
+   "Concluir" neste ambiente (o texto "Já confirmado no servidor" na tela
+   de sucesso do wizard, nesse teste, refletia `counts.pending` de
+   **antes** do enfileiramento, não uma confirmação real — não
+   confiar nesse texto como prova de envio; comportamento pré-existente
+   do hook de fila, não alterado por este pacote, fora de escopo aqui).
+4. **A parte de rede foi verificada do mesmo jeito que o fix de
+   15/08 já validou o formato antigo: `curl` direto contra o Gateway de
+   produção real** (`uvicorn-main-production-92f8.up.railway.app`), com
+   um achado `identificado` no mesmo shape que o wizard produz
+   (`id`/`flagId`/`estado`/campos). Sem `departamento`: `422`,
+   `issues: [{"path":"achados.<id>.departamento","message":"departamento
+   é obrigatório quando o risco foi identificado"}]` — confirma que
+   `missingRequiredWhenIdentified` no cliente aponta exatamente o que o
+   servidor aponta. Com `departamento`: `201`,
+   `ronda_d56bf057-f0a5-4464-be52-1c39145bb4b8`. Confirmado persistido via
+   consulta direta ao Supabase do projeto real (`jdbzhrtovpoaafpytgza` —
+   não o projeto `luna-safety-walk-piloto`, que está com
+   `convergia_rondas` vazio e não é o que o Gateway de produção realmente
+   usa; achado incidental desta verificação, não investigado além disso,
+   fora de escopo). Registro de teste removido depois (`delete from
+   convergia_rondas where ronda_id = '...' returning ronda_id`, linha
+   devolvida confirmando a exclusão; contagem da tabela conferida antes/depois,
+   2 rondas reais preservadas).
+
+### O "portão real" (ADR desta sessão) — NÃO verificado, e por que
+
+O pacote de origem é explícito: "o Arquiteto abre o aparelho, entra na
+ronda do Sylvamo, vê os campos acesos, preenche, salva, e a ronda sobe.
+Enquanto essa ronda não subir, esta etapa não está feita." Isso é uma
+ação humana, no aparelho físico do Architect, fora do alcance desta
+sessão (sem acesso a esse dispositivo). **Não fazer essa afirmação aqui.**
+O que este pacote garante, e que foi de fato confirmado nesta sessão: (1)
+o gate do cliente aponta os mesmos campos que o servidor exige, incluindo
+sobre o conteúdo já carregado de um item `"invalid"` sem `issues`
+guardada (Etapa 1, testado); (2) uma vez que o Architect preencha os
+campos acesos e clique "Salvar e enviar" na tela de edição da fila, o
+payload resultante passa a validação do servidor real (confirmado via
+`curl` idêntico, item 4 acima). A confirmação de que a ronda real do
+Sylvamo de fato subiu depende de o Architect abrir o aparelho — ação de
+campo, não de código, e portanto não incluída nesta autoatestação.
+
+### O que este pacote NÃO faz
+
+- Não afrouxa a validação do servidor (`luna-core` inalterado).
+- Não torna foto obrigatória, em nenhum estado — travado em teste.
+- Não migra formato antigo — `isOldFormatRejection` reconhece, não
+  converte.
+- Não limpa foto original órfã no IndexedDB — segue aberta, já registrada
+  em 15/08.
+- Não toca em `app/forge/`, `components/forge/`, `app/page.tsx`.
+- Não remove nem esconde o botão "Descartar esta ronda do aparelho" já
+  existente em `ronda-editor.tsx` — continua disponível pra qualquer
+  status de fila, com o mesmo aviso de confirmação que já tinha.
+
+  **Correção do parágrafo acima, ver entrada de 2026-08-18 logo abaixo:**
+  o botão passou a ficar escondido quando a rejeição é recuperável.
+  Decisão revista depois de comparar com a branch irmã (`#29`, superada)
+  e a revisão de código sobre as duas.
+
+---
+
+## 2026-08-18 — Ronda presa em campo, parte 2: esconde "Descartar" quando a rejeição é recuperável, corrige o caso de payload misto
+
+### Contexto
+
+Três sessões chegaram, de forma independente, na mesma correção (gate do
+cliente divergindo de `requiredWhenIdentified`) entre 18:27 e 19:04 de
+17/08 — PRs `#28`, `#29` e `#30` deste repositório. Uma revisão comparando
+os três (relatório externo a esta sessão, "Situação de PR e merge —
+17/08/2026, 21h") recomendou `#30` como base — é o único com verificação
+`curl` real contra o Gateway de produção (422→201, linha do Supabase
+contada e removida) — e portar duas coisas de `#29` que `#30` não tinha:
+esconder "Descartar esta ronda do aparelho" quando a rejeição é
+recuperável, e um achado adicional da própria revisão sobre como essa
+checagem deveria funcionar num payload misto.
+
+### O que mudou
+
+**`lib/ronda/issues.ts`** — nova `canDiscardInvalidItem(achados, issues)`.
+Deliberadamente mais conservadora que `isOldFormatRejection` (que decide só
+a *mensagem* — "formato antigo" vs. "corrija os campos"): `isOldFormatRejection`
+usa `.some()`, então basta **uma** issue em `achados.N.id` pra classificar o
+422 inteiro como formato antigo, mesmo que **outra** issue do mesmo 422
+aponte pra um campo de um achado que ainda está na lista carregada — um
+payload misto assim ainda tem o que corrigir editando o achado. A mensagem
+continua "formato antigo" (a explicação técnica exata não muda); a
+permissão de descartar, não — `canDiscardInvalidItem` só devolve `true`
+quando não há **nada** corrigível: nem o gate do cliente sobre o conteúdo
+já carregado (`findingsWithMissingFields`), nem uma issue do servidor que
+mapeia pra um campo de um achado que ainda existe na lista
+(`mapIssuesToFindings(...).byFinding`).
+
+Usada em **`ronda-editor.tsx`** (esconde "Descartar esta ronda do
+aparelho" quando `queueStatus === "invalid"` e não há nada corrigível) e em
+**`queue-status-bar.tsx`** (mesma checagem por item na lista agregada de
+itens rejeitados; o parágrafo agregado deixou de afirmar "provavelmente
+formato antigo" como única causa possível).
+
+### Verificação
+
+1. `npm run typecheck` / `npm run test:constitution` / `npm run build` —
+   limpos.
+2. `npm test` — **75/75** (72 pré-existentes intactos, nenhum alterado; 3
+   novos em `issues.test.ts`, cobrindo especificamente o caso misto: uma
+   issue de campo real + uma de `achados.N.id` no mesmo 422 →
+   `canDiscardInvalidItem` continua `false`, mesmo com `isOldFormatRejection`
+   `true`).
+3. **No navegador, via Playwright (Chromium local) contra o wizard e o
+   editor deste repo**: item `"invalid"` seedado direto no IndexedDB com o
+   payload misto exato do teste acima → banner mantém "Não dá para
+   recuperar — formato antigo" (mensagem preservada, como pretendido),
+   botão "Descartar esta ronda do aparelho" confirmado **ausente**, e a
+   mensagem real do servidor ("departamento é obrigatório quando o risco
+   foi identificado") confirmada visível no campo. Registro sintético só
+   em IndexedDB do navegador de teste, processo efêmero — nunca tocou
+   `luna-core` nem qualquer banco real.
+
+### O que este pacote NÃO faz
+
+- Não muda a heurística de `isOldFormatRejection` nem o texto da
+  mensagem — só a permissão de oferecer "Descartar".
+- Não fecha `#29` nem mexe em `#28` — decisões de PR, fora do escopo de
+  um commit de código.
+- Mesmas ressalvas da entrada de 17/08 acima (validação do servidor
+  inalterada, foto nunca obrigatória, formato antigo não migrado, `app/forge/`
+  e `components/forge/` intocados).
+
+---
+
+## 2026-08-18 — Compressão de foto em paralelo descartava a aba antes do upload; correção de diagnóstico do pacote anterior
+
+### Achado real — não o que o pacote original descrevia
+
+Um pacote anterior ("a Camada 2 desligou a leitura de imagem sem ninguém
+notar") diagnosticava a sugestão por IA como desligada no caminho com rede,
+inferindo isso da mensagem do commit da Camada 2 (16/08) em vez de ler a
+chamada. **Essa leitura estava errada** — confirmado nesta sessão e pelo
+próprio Engenheiro depois: `components/ronda/finding-card.tsx`,
+`handlePhotoChange`, tem
+
+```ts
+void photoToBase64(compressed[0])
+  .then((photo) => applyPhotoSuggestion(photo))
+  .catch(() => undefined);
+```
+
+fora do laço de upload, fora de qualquer condicional — dispara sempre, com
+ou sem rede. A sugestão por foto nunca esteve quebrada. O pacote foi
+retirado; esta entrada registra a correção de diagnóstico, não só a de
+código, porque o erro (inferir do texto do commit em vez de abrir a
+função) é o tipo de achado que vale mais que a correção em si.
+
+**Duas hipóteses eliminadas nesta sessão, sem código:**
+- *Cache do service worker servindo bundle antigo do `#30`* — descartada:
+  as rondas que estavam presas na fila do aparelho real do Arquiteto
+  subiram e a fila esvaziou, o que só acontece com o gate novo em
+  produção.
+- *Sugestão por foto desligada com rede* — descartada, ver acima.
+
+### O bug real, encontrado uma linha acima do que o pacote retirado apontava
+
+Relato de campo, textual: *"a foto não sobe, sai do app"*. Mesma função,
+`handlePhotoChange`:
+
+```ts
+const compressed = await Promise.all(fileList.map(compressPhoto));
+```
+
+O `<input>` é `multiple`. `compressPhoto` decodifica cada foto em
+resolução plena (`new Image()` + `drawImage` num `<canvas>`) antes de
+reduzir a 1280px — três fotos de 12MP em paralelo somam ~147MB de bitmap
+RGBA simultâneos, mais os `File` originais retidos para o upload logo
+depois. Memória suficiente para o navegador móvel descartar a aba **no
+meio da compressão**, antes de `uploadFoto` sequer ser chamado — sem erro
+na tela (a Promise nunca resolve nem rejeita, a aba já não existe), sem
+falha de rede, sem nada em log de servidor. "A foto não sobe" e "sai do
+app" são o mesmo evento, não dois sintomas.
+
+### O que mudou
+
+**`components/ronda/finding-card.tsx`** — única mudança: o `Promise.all`
+que decodificava todas as fotos selecionadas em paralelo virou um laço
+sequencial (`for` com `await` por arquivo). No máximo um bitmap de
+resolução plena na memória por vez, em vez de N simultâneos. Comentário
+no código explica o porquê (não óbvio sem o contexto de campo).
+
+Isolado, de propósito — nada mais tocado nesta entrada:
+- **Não** trocado `new Image()`/`canvas` por `createImageBitmap` com
+  `resizeWidth`/`resizeHeight` (decodificaria já reduzido, sem o pico de
+  memória de resolução plena) — melhoria real, mas é mudança de
+  mecanismo de decodificação, não a causa raiz mínima; fica pra um PR
+  próprio.
+- **Não** movida a sugestão por foto para usar `fotoId` em vez de
+  base64 — motivo é economia de memória, não correção de um bug (a
+  sugestão nunca esteve quebrada, ver acima); e mexer nisso sem o
+  caminho por id já existir no servidor quebraria a sugestão de
+  verdade, criando o bug que o pacote anterior descreveu por engano.
+- **Não** adicionada instrumentação de início/fim de compressão no
+  IndexedDB — fica pra quando a correção de decodificação reduzida
+  entrar, que é quando esse contador teria mais valor.
+
+### Verificação
+
+1. `npm run typecheck` — limpo.
+2. `npm test` — **75/75**, nenhum teste alterado (o mesmo total de antes
+   desta mudança — a correção não adiciona nem quebra caminho de teste
+   algum; a suíte atual não tem teste de compressão de imagem real,
+   que dependeria de `<canvas>`/`Image` em ambiente DOM completo).
+3. `npm run test:constitution` — limpo (77 arquivos).
+4. `npm run build` — limpo.
+5. **Não verificado nesta sessão**: reprodução real do descarte de aba
+   sob pressão de memória (exigiria um dispositivo móvel real com fotos
+   de 12MP e memória limitada — não reproduzível neste ambiente
+   sandboxed) e a confirmação em produção de que 3 fotos simultâneas não
+   derrubam mais a aba. **Portão real**: o Arquiteto anexar 3 fotos de
+   uma vez numa ronda real e todas subirem, sem a aba fechar. Enquanto
+   isso não acontecer, esta etapa não está confirmada — só o mecanismo
+   que deveria resolver o problema está no código.
+6. Sem acesso ao Railway nesta sessão (confirmado pelo Engenheiro,
+   tentativa própria retornou 403) — nenhuma verificação contra produção
+   foi tentada aqui, como instruído.
+
+### O que este pacote NÃO faz
+
+- Não implementa decodificação já reduzida (`createImageBitmap`) — PR
+  próprio, listado acima.
+- Não move a sugestão por foto para `fotoId` — PR próprio, e só depois
+  do endpoint por id existir no servidor.
+- Não adiciona contador/instrumentação de compressão.
+- Não toca `app/forge/`, `components/forge/`, `app/page.tsx`.
+- Não mexe na branch do `#29` (fechada, não mergeada, `mergeable_state:
+  behind`, superada pelo `#30`) — este trabalho partiu de `origin/main`
+  limpo, confirmado por `git merge-base origin/main HEAD` batendo com a
+  ponta de `origin/main` antes de qualquer commit.
+
+---
+
+## 2026-08-19 — Fechar a câmera: três PRs, com autorização de merge
+
+Pacote fechado em sequência — `#31` (compressão sequencial, já descrito
+acima), depois PR 1 (`#33`, dois caminhos de foto), PR 2 (`#34`,
+decodificação já reduzida), PR 3 (instrumentação mínima). Autorização
+explícita do Arquiteto: mergear cada PR após os próprios portões
+automáticos, com o portão de campo verificado **depois** do merge — troca
+aceitável porque as três mudanças são aditivas, o único usuário é o
+Arquiteto, e a ronda usada em campo agora é banco de teste.
+
+### Dado novo que motivou o pacote
+
+Depois do `#32` (que removeu `capture="environment"` para recuperar
+galeria/panorâmica), no aparelho real do Arquiteto: sem `capture`, o
+Android decidiu ir direto para a galeria de fotos, sem seletor — em vez do
+gerenciador de arquivos observado antes. Confirma o diagnóstico do `#32`
+(a ausência de `capture` deixa a escolha do que abrir inteiramente a cargo
+do sistema) e a necessidade do PR 1: os dois caminhos, lado a lado, tiram
+essa loteria de cima do usuário.
+
+### PR 1 — dois caminhos de foto (`#33`)
+
+`components/ronda/finding-card.tsx` ganhou dois inputs ocultos e dois
+botões — "Tirar foto" (`capture="environment"`, toque único) e "Escolher"
+(sem `capture`, seletor completo) — com um `ref` cada e o mesmo
+`handlePhotoChange`. Comentário no código para a duplicação não parecer
+descuido de uma sessão futura.
+
+Duas correções incluídas no mesmo PR: `protecao_contra_incendios` faltava
+em `FLAG_LABELS` (aparecia como chave crua na Etapa 2); a mensagem de
+recuperação de rascunho garantia que nada se perdeu, exatamente no caso em
+que uma foto em processamento se perde numa queda do app — agora pede
+conferência em vez de garantir o que não há como saber.
+
+Durante a implementação, `#31` (compressão sequencial, já em rascunho e
+verificado) foi mergeado primeiro, como instruído — o rebase de PR 1 por
+cima dele foi automático, sem conflito real (arquivos tocados são
+adjacentes na mesma função, não sobrepostos).
+
+### PR 2 — decodificar já reduzido (`#34`)
+
+`lib/ronda/photo.ts`: `parseImageDimensionsFromHeader` lê largura/altura
+direto dos primeiros 64KB do arquivo (marcador `SOF` do JPEG, `IHDR` do
+PNG) sem decodificar. Com a dimensão em mãos, `compressWithImageBitmap`
+usa `createImageBitmap` informando só o lado maior (`resizeWidth` ou
+`resizeHeight`, nunca os dois) — o navegador calcula o outro preservando
+proporção — com `imageOrientation: "from-image"` obrigatório e
+`OffscreenCanvas` quando disponível. `bitmap.close()` logo após desenhar;
+canvas zerado ao final. Teto por proporção: 1280px até 2,5:1, 2000px acima
+disso (panorâmica). Cabeçalho não reconhecido, truncado, ou
+`createImageBitmap` falhando: cai no caminho antigo, preservado.
+
+Testes novos, função pura: teto por proporção (padrão e panorâmica) e
+parse de cabeçalho (JPEG válido, PNG válido, truncado, formato não
+reconhecido) — 6 testes, `lib/ronda/__tests__/photo.test.ts`.
+
+### PR 3 — instrumentação mínima (`#35`)
+
+Novo store IndexedDB (`diagnostics`, `db.ts` v4→v5) grava eventos do
+pipeline de foto — compressão iniciada/concluída, upload
+pedido/concluído/falhou, sugestão pedida/respondida/falhou — cada um
+carimbado com `sessionId` (uma por abertura do app) e `correlationId` (id
+da foto para compressão/upload, id do achado para sugestão).
+
+O evento "started"/"requested" é gravado com `await` (não `void`) *antes*
+de a operação arriscada começar — é essa gravação, já confirmada em
+disco, que sobrevive à aba sendo descartada no meio. `lib/ronda/photo.ts`
+ganhou `width`/`height` em `CompressedPhoto` e exportou `readImageDimensions`
+só para a instrumentação registrar a dimensão sem decodificar de novo —
+nenhuma mudança na lógica de compressão em si.
+
+`lib/ronda/diagnostics.ts` concentra a parte pura (testável sem
+IndexedDB): `hasOrphanedStart` (algum início sem fim pelo mesmo
+`correlationId`), `summarizeCompressions`, `lastCompletedSessionSummary`
+(a sessão anterior mais recente — nunca a atual, que ainda está em
+andamento) e `selectDiagnosticEventKeysToDiscard` (mantém a sessão atual,
+a última anterior, e qualquer sessão com início órfão; descarta o resto —
+mesmo princípio de "diagnóstico não é histórico" já aplicado uma vez às
+fotos originais em `discardRondaLocalCopies`). 8 testes novos,
+`lib/ronda/__tests__/diagnostics.test.ts`.
+
+`components/ronda/ronda-list.tsx` ("Ver rondas anteriores") lê e limpa
+uma vez por montagem, mostra uma linha discreta — "Sessão anterior: N/M
+compressões de foto concluídas", com aviso só se M < N. Sem painel, sem
+gráfico, como pedido.
+
+### Verificação
+
+1. `npm run typecheck`, `npm test`, `npm run test:constitution`,
+   `npm run build` — limpos nos três PRs, cada um verificado antes do
+   commit e de novo (CI) antes do merge.
+2. `npm test`: 75 (ponto de partida) → 81 (PR 2, +6) → 89 (PR 3, +8).
+   Nenhum teste anterior alterado em nenhum dos três.
+3. `git merge-base origin/main HEAD` batendo com a ponta de `origin/main`
+   confirmado antes do primeiro commit de cada branch — inclusive depois
+   do rebase de PR 1 sobre o `#31` recém-mergeado.
+4. **Não verificado nesta sessão** (comportamento real de navegador
+   móvel, sem substituto em CI): `createImageBitmap`/`canvas`/`capture`
+   em dispositivo real, orientação EXIF de foto real, e o gate de campo
+   descrito abaixo. Por autorização do Arquiteto, os três PRs foram
+   mergeados antes dessa verificação — ela acontece depois, não antes.
+
+### Gate de campo — pendente, verificação pós-merge
+
+1. Dois botões aparecem no card do achado.
+2. "Tirar foto" abre a câmera direto.
+3. "Escolher" dá galeria e o aplicativo de câmera completo, com
+   panorâmica.
+4. Tirar uma foto pela câmera não fecha o app.
+5. Anexar uma panorâmica funciona e o detalhe fica legível no relatório.
+
+Se o item 4 ainda falhar depois do PR 2, o registro do PR 3 (linha "Sessão
+anterior" em "Ver rondas anteriores", ou consulta direta ao store
+`diagnostics`) vai mostrar uma compressão iniciada sem concluída — dado, não
+suposição, ao contrário do que essa mesma investigação tinha antes desta
+instrumentação existir.

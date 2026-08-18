@@ -6,7 +6,6 @@
  */
 import { listQueue, updateQueueItem, deleteQueueItem, discardRondaLocalCopies, type QueueItem } from "./db";
 import { submitRonda, RondaSubmitError } from "./api-client";
-import { classifyQueueRejection } from "./issues";
 
 let syncing = false;
 
@@ -98,20 +97,15 @@ export async function trySyncPendingRondas(onProgress?: (item: QueueItem) => voi
         // "error" e eram retentados pra sempre em todo reconecte/reabertura
         // do app, gerando 422 repetido sem nunca se resolver. "invalid" tira
         // esses itens do loop de retry automático (ver isPermanentRejection).
+        //
+        // A mensagem aqui só descreve o que aconteceu — não prescreve "refaça
+        // e descarte" nem "corrija e salve": essa decisão depende de o
+        // registro ser recuperável (campo faltando) ou não (formato antigo),
+        // e só `RondaEditor` tem o que precisa pra decidir (o gate do
+        // cliente sobre o conteúdo carregado, ver `lib/ronda/issues.ts`).
         const permanent = isPermanentRejection(error);
         const nextStatus = permanent ? "invalid" : "error";
-        // Gate divergente de 17/08/2026 (Etapa 3): as duas mensagens que
-        // apareciam juntas na mesma tela — "refaça e descarte" e "corrija
-        // abaixo e salve" — vêm de dois casos diferentes que o fix de 15/08
-        // não separava. `classifyQueueRejection` decide qual dos dois é este,
-        // a partir do mesmo `issues` que agora sobrevive no registro (ver
-        // `db.ts`) em vez de morrer aqui dentro do texto genérico de antes.
-        const recoverable = classifyQueueRejection(issues) === "recoverable";
-        const nextMessage = !permanent
-          ? message
-          : recoverable
-            ? `Envio recusado pelo servidor: ${message}. Corrija os campos indicados abaixo e salve — a ronda volta pra fila e é reenviada.`
-            : `Este registro não pode ser reenviado automaticamente (rejeitado pelo servidor: ${message}). Refaça esta ronda e descarte este item da fila.`;
+        const nextMessage = permanent ? `Este registro não pode ser reenviado automaticamente (rejeitado pelo servidor: ${message}).` : message;
         await updateQueueItem(item.localId, { status: nextStatus, lastError: nextMessage, issues, attempts: item.attempts + 1 });
         onProgress?.({ ...item, status: nextStatus, lastError: nextMessage, issues });
         // Uma falha (ex. rede caiu de novo no meio da fila) não deve

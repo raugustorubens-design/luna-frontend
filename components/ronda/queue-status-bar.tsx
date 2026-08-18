@@ -1,22 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import type { QueueCounts, QueueItem } from "@/lib/ronda/db";
-import { findingsWithMissingFields } from "@/lib/ronda/types";
-import { classifyQueueRejection } from "@/lib/ronda/issues";
-
-/**
- * Gate divergente de 17/08/2026 (mesmo princípio da Etapa 3, aplicado aqui
- * também): esta barra é a primeira coisa que aparece ao abrir `/ronda`, e
- * até esta correção presumia, para todo item "invalid", que era formato
- * antigo — sem verificar. Com `issues` guardadas, a classificação vem
- * delas; sem elas (item preso antes desta mudança), cai pro gate do
- * cliente sobre o próprio payload salvo.
- */
-function isRecoverable(item: QueueItem): boolean {
-  if (item.issues && item.issues.length > 0) return classifyQueueRejection(item.issues) === "recoverable";
-  return findingsWithMissingFields(item.submission.achados).length > 0;
-}
+import { canDiscardInvalidItem } from "@/lib/ronda/issues";
 
 /**
  * "Usuário precisa conseguir ver, na própria tela, quantos achados estão
@@ -81,49 +66,30 @@ export function QueueStatusBar({
       </div>
       {counts.invalid > 0 && (
         <div className="flex flex-col gap-2 border-t border-orange-400/30 bg-orange-400/10 px-4 py-2 text-orange-900 dark:text-orange-200">
-          {/*
-            Gate divergente de 17/08/2026: o texto antigo presumia "formato
-            antigo" para todo item "invalid" sem verificar — que é
-            exatamente a instrução errada para um item que só está faltando
-            um campo. Cada linha abaixo já diz o que o servidor recusou
-            (`item.lastError`); esta frase não repete um diagnóstico que
-            pode estar errado.
-          */}
           <p>
             {counts.invalid} registro{counts.invalid === 1 ? "" : "s"} desta fila {counts.invalid === 1 ? "foi" : "foram"} rejeitado
-            {counts.invalid === 1 ? "" : "s"} pelo servidor e não {counts.invalid === 1 ? "vai" : "vão"} se resolver tentando de novo.
+            {counts.invalid === 1 ? "" : "s"} pelo servidor e não {counts.invalid === 1 ? "vai" : "vão"} se resolver tentando de novo — abra a ronda em
+            {" "}&quot;Ver rondas anteriores&quot; pra ver o motivo. Se for campo faltando, corrija e salve ali; se for formato antigo, refaça e descarte.
           </p>
           {invalidItems.map((item) => {
-            const recoverable = isRecoverable(item);
+            // Mesma checagem de `ronda-editor.tsx` (`canDiscardInvalidItem`):
+            // "Descartar" só aparece quando não há nada corrigível nesta
+            // ronda — nem no gate do cliente sobre o conteúdo carregado, nem
+            // numa issue do servidor que ainda mapeia pra um achado da lista.
+            const allowDiscard = canDiscardInvalidItem(item.submission.achados, item.issues);
             return (
-              <div
-                key={item.localId}
-                className="flex items-center justify-between gap-2 rounded border border-orange-400/40 bg-black/5 px-2 py-1 dark:bg-black/20"
-              >
+              <div key={item.localId} className="flex items-center justify-between gap-2 rounded border border-orange-400/40 bg-black/5 px-2 py-1 dark:bg-black/20">
                 <span className="truncate">
                   {item.submission.metadata.titulo || "(sem título)"} — {item.submission.metadata.data} — {item.lastError ?? "Rejeitado pelo servidor."}
                 </span>
-                {/*
-                  Etapa 3: recuperável leva a corrigir, nunca a descartar —
-                  as fotos daquele achado só existem neste aparelho.
-                */}
-                {recoverable ? (
-                  <Link
-                    href={`/ronda/fila/${item.localId}`}
-                    className="shrink-0 rounded border border-cyan-500/50 px-2 py-1 text-[11px] text-cyan-700 hover:border-cyan-600 dark:text-cyan-300 dark:hover:border-cyan-400"
+                {onDiscardInvalid && allowDiscard && (
+                  <button
+                    type="button"
+                    onClick={() => onDiscardInvalid(item.localId)}
+                    className="shrink-0 rounded border border-orange-400/50 px-2 py-1 text-[11px] hover:border-orange-500"
                   >
-                    Corrigir
-                  </Link>
-                ) : (
-                  onDiscardInvalid && (
-                    <button
-                      type="button"
-                      onClick={() => onDiscardInvalid(item.localId)}
-                      className="shrink-0 rounded border border-orange-400/50 px-2 py-1 text-[11px] hover:border-orange-500"
-                    >
-                      Descartar
-                    </button>
-                  )
+                    Descartar
+                  </button>
                 )}
               </div>
             );

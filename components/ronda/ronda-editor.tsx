@@ -5,34 +5,10 @@ import { useRouter } from "next/navigation";
 import { getRonda, patchRonda, RondaSubmitError } from "@/lib/ronda/api-client";
 import { deleteQueueItem, getQueueItem, updateQueueSubmission, type QueueStatus } from "@/lib/ronda/db";
 import { trySyncPendingRondas } from "@/lib/ronda/queue";
-import { duplicateFinding, findingsWithMissingFields, type MissingField, type RondaFinding, type RondaMetadata, type ValidationIssue } from "@/lib/ronda/types";
+import { duplicateFinding, findingsWithMissingFields, type RondaFinding, type RondaMetadata } from "@/lib/ronda/types";
 import { ENTRY_STATUS_LABEL } from "@/lib/ronda/list-view";
-import { classifyQueueRejection, parseIssuePath } from "@/lib/ronda/issues";
+import { mapIssuesToFindings, isOldFormatRejection, canDiscardInvalidItem, type ValidationIssue } from "@/lib/ronda/issues";
 import { FindingCard } from "./finding-card";
-
-/**
- * Separa as issues do 422 em "por achado" (viram destaque de campo no
- * `FindingCard` correspondente) e "sem achado" (metadados, `id` que não bate
- * com nenhum achado carregado — mostradas à parte, com o texto do servidor,
- * nunca só uma contagem). Pura, exportada só para teste; não depende de
- * estado do componente além do que recebe por parâmetro.
- */
-function splitIssues(
-  issues: ValidationIssue[] | undefined,
-  findingIds: ReadonlySet<string>,
-): { byFinding: Record<string, Partial<Record<MissingField, string>>>; unmapped: ValidationIssue[] } {
-  const byFinding: Record<string, Partial<Record<MissingField, string>>> = {};
-  const unmapped: ValidationIssue[] = [];
-  for (const issue of issues ?? []) {
-    const parsed = parseIssuePath(issue.path);
-    if (parsed && findingIds.has(parsed.findingId)) {
-      (byFinding[parsed.findingId] ??= {})[parsed.field] = issue.message;
-    } else {
-      unmapped.push(issue);
-    }
-  }
-  return { byFinding, unmapped };
-}
 
 /**
  * Edição de uma ronda, das duas origens que a lista agora mostra:
@@ -75,28 +51,6 @@ function Editor({ source }: { source: EditorSource }) {
 
   const isQueue = source.kind === "queue";
 
-  // Gate divergente de 17/08/2026 (Etapa 2). `byFinding` alimenta o
-  // `serverIssues` de cada `FindingCard`; `unmapped` é o que não bate com
-  // nenhum achado carregado (metadados, id que já não existe) — mostrado à
-  // parte, texto do servidor, nunca só uma contagem.
-  const { byFinding: issuesByFinding, unmapped: unmappedIssues } = useMemo(
-    () => splitIssues(queueIssues, new Set(findings.map((f) => f.id))),
-    [queueIssues, findings],
-  );
-
-  /**
-   * Etapa 3 — qual das duas mensagens mostrar. Com `issues` guardadas
-   * (rejeição depois desta correção), a classificação vem delas direto. Sem
-   * `issues` (Etapa 4, item que já estava preso antes desta mudança), cai
-   * pro gate do cliente: se há achado com campo obrigatório vazio agora, dá
-   * pra corrigir na tela mesmo sem o servidor ter dito o quê — é essa rede
-   * de segurança que resolve o caso preso sem esperar reenvio nenhum.
-   */
-  const recoverable = useMemo(() => {
-    if (queueIssues && queueIssues.length > 0) return classifyQueueRejection(queueIssues) === "recoverable";
-    return findingsWithMissingFields(findings).length > 0;
-  }, [queueIssues, findings]);
-
   const load = useCallback(async () => {
     if (source.kind === "server") {
       const detail = await getRonda(source.rondaId);
@@ -131,6 +85,29 @@ function Editor({ source }: { source: EditorSource }) {
   function updateFinding(next: RondaFinding) {
     setFindings((current) => current.map((f) => (f.id === next.id ? next : f)));
   }
+
+  /**
+   * Gate do cliente (Etapa 1) sobre o conteúdo já carregado — funciona
+   * mesmo quando `queueIssues` é `undefined` (item caiu em "invalid" antes
+   * desta correção existir, sem `issues` guardadas). Só quando ele não acha
+   * nada de faltando é que a classificação recorre à heurística de
+   * `isOldFormatRejection` sobre as issues do servidor, se houver.
+   */
+  const clientMissingFields = useMemo(() => findingsWithMissingFields(findings), [findings]);
+  const { byFinding: issuesByFinding, unmapped: unmappedIssues } = useMemo(
+    () => mapIssuesToFindings(queueIssues ?? [], new Set(findings.map((f) => f.id))),
+    [queueIssues, findings],
+  );
+  const isOldFormat = clientMissingFields.length === 0 && isOldFormatRejection(queueIssues);
+  /**
+   * Achado 2 (revisão da branch): mais conservador que `isOldFormat`, de
+   * propósito — ver a nota em `canDiscardInvalidItem`. Um payload misto
+   * (issue de campo real + issue de `id`) pode continuar classificado como
+   * "formato antigo" na mensagem e ainda assim não permitir "Descartar",
+   * porque uma das issues aponta pra um campo de um achado que ainda está
+   * na lista carregada.
+   */
+  const allowDiscardInvalid = queueStatus !== "invalid" || canDiscardInvalidItem(findings, queueIssues);
 
   async function handleSave() {
     if (!metadata) return;
@@ -202,40 +179,23 @@ function Editor({ source }: { source: EditorSource }) {
 
       <main className="ronda-scroll-pad min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
         <div className="flex flex-col gap-3">
-          {/*
-            Gate divergente de 17/08/2026 (Etapa 3). `queueError` (`lastError`)
-            já é a mensagem definitiva quando `queueIssues` existe: `queue.ts`
-            monta esse texto escolhendo a variante certa (recuperável ou não)
-            na hora da rejeição — não há nada a acrescentar, e acrescentar
-            duplicaria a instrução.
-
-            A instrução extra abaixo só aparece na ausência de `queueIssues`
-            — Etapa 4, rede de segurança para um item que ficou "invalid"
-            *antes* desta correção existir: `lastError` daquele registro
-            ainda carrega o texto antigo contraditório ("refaça e descarte"
-            preso ao lado do que deveria dizer "corrija"), e o gate do
-            cliente (Etapa 1, `recoverable` computado sobre os achados já
-            carregados) é quem sabe que dá para corrigir mesmo sem o
-            servidor ter confirmado de novo.
-          */}
-          {isQueue && queueError && (
+          {isQueue && queueStatus === "invalid" && (
             <div className="rounded border border-orange-500/40 bg-orange-500/10 p-2.5 text-xs text-orange-800 dark:text-orange-300">
-              <p className="font-medium">O servidor recusou esta ronda:</p>
-              <p className="mt-1">{queueError}</p>
-              {recoverable && (!queueIssues || queueIssues.length === 0) && (
-                <p className="mt-1 font-medium">Corrija os campos indicados abaixo e salve — ela volta pra fila e é reenviada.</p>
+              <p className="font-medium">O servidor recusou esta ronda{queueError ? `: ${queueError}` : "."}</p>
+              {isOldFormat ? (
+                <p className="mt-1">Não dá para recuperar — formato antigo, sem os campos que esta tela edita. Refaça esta ronda pelo formulário e descarte este item da fila.</p>
+              ) : (
+                <p className="mt-1">Corrija os campos indicados abaixo e salve — ela volta pra fila e é reenviada.</p>
               )}
             </div>
           )}
 
-          {unmappedIssues.length > 0 && (
+          {isQueue && unmappedIssues.length > 0 && (
             <div className="rounded border border-orange-500/40 bg-orange-500/10 p-2.5 text-xs text-orange-800 dark:text-orange-300">
-              <p className="font-medium">Outros problemas apontados pelo servidor:</p>
-              <ul className="mt-1 list-disc pl-4">
+              <p className="font-medium">O servidor também apontou:</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">
                 {unmappedIssues.map((issue, index) => (
-                  <li key={`${issue.path}-${index}`}>
-                    {issue.path}: {issue.message}
-                  </li>
+                  <li key={`${issue.path}-${index}`}>{issue.message}</li>
                 ))}
               </ul>
             </div>
@@ -283,14 +243,13 @@ function Editor({ source }: { source: EditorSource }) {
           )}
 
           {/*
-            Etapa 3: escondido especificamente quando o item está "invalid" e
-            é recuperável — oferecer descartar aqui é oferecer perda de dado
-            (as fotos daquele achado só existem neste aparelho) para um caso
-            que a própria tela já sabe corrigir. Nos demais estados da fila
-            (pending/error/syncing), descartar continua uma ação normal,
-            sempre disponível.
+            Escondido quando há algo corrigível na tela — nem
+            `findingsWithMissingFields` nem uma issue mapeada pra um achado
+            carregado, ver `canDiscardInvalidItem`. Oferecer "descartar" pra
+            uma ronda que só precisa de um campo preenchido seria oferecer
+            perda de dado: as fotos de um achado só existem neste aparelho.
           */}
-          {isQueue && !(queueStatus === "invalid" && recoverable) && (
+          {isQueue && allowDiscardInvalid && (
             <button type="button" onClick={() => void handleDiscard()} className="self-start text-xs text-red-500 underline dark:text-red-400">
               Descartar esta ronda do aparelho
             </button>

@@ -2,13 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  FLAG_LABELS,
   RISK_STATES,
   RISK_STATE_LABELS,
   FINDING_CLASSIFICATIONS,
   FINDING_CLASSIFICATION_LABELS,
   FINDING_SEVERITIES,
   FINDING_SEVERITY_LABELS,
-  findingTitle,
   missingRequiredWhenIdentified,
   type RondaFinding,
   type RondaPhoto,
@@ -16,10 +16,21 @@ import {
   type FindingClassification,
   type MissingField,
 } from "@/lib/ronda/types";
-import { compressPhoto, photoToBase64 } from "@/lib/ronda/photo";
+import { compressPhoto, photoToBase64, readImageDimensions, type CompressedPhoto } from "@/lib/ronda/photo";
 import { saveOriginalPhoto } from "@/lib/ronda/db";
 import { uploadFoto, rondaFotoUrl } from "@/lib/ronda/api-client";
 import { getFotoSugestao } from "@/lib/ronda/api-client";
+import {
+  newPhotoId,
+  logCompressionStarted,
+  logCompressionCompleted,
+  logUploadRequested,
+  logUploadCompleted,
+  logUploadFailed,
+  logSuggestionRequested,
+  logSuggestionAnswered,
+  logSuggestionFailed,
+} from "@/lib/ronda/diagnostics";
 
 /**
  * Cores exatas do protótipo real do relatório final (não aproximadas para
@@ -67,20 +78,16 @@ export function FindingCard({
   onRemove?: (findingId: string) => void;
   /** Reporta pro chamador quais campos uma sugestão de foto (Fase 4) de fato preencheu, pra Parte 3 (correção humana vira aprendizado) comparar sugerido-vs-salvo na hora de concluir. */
   onSuggestionApplied?: (findingId: string, sugerido: Partial<RondaFinding>) => void;
-  /**
-   * Gate divergente de 17/08/2026 (Etapa 2) — mensagem real do 422 do
-   * servidor, por campo, quando este card está sendo editado a partir de um
-   * item de fila rejeitado (`ronda-editor.tsx`). Opcional e aditivo: omitido
-   * (caso do wizard), o card continua marcando os mesmos campos com a
-   * mensagem genérica calculada localmente por `missingRequiredWhenIdentified`
-   * — a mesma regra, só sem o texto exato do servidor.
-   */
-  serverIssues?: Partial<Record<MissingField, string>>;
+  /** Issues reais do servidor (422) endereçadas a este achado, campo → mensagem — ver `lib/ronda/issues.ts`. Omitido fora da tela de edição de um item rejeitado. */
+  serverIssues?: Record<string, string>;
 }) {
   const [compressing, setCompressing] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [lowConfidenceFields, setLowConfidenceFields] = useState<Set<"classificacao" | "gravidade">>(new Set());
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Dois inputs ocultos, um por caminho de foto — ver o comentário junto dos
+  // botões, mais abaixo, para o motivo de não colapsar num só.
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   // A leitura de foto (Fase 4) é assíncrona e pode terminar depois de vários
   // re-renders — `finding` capturado no fechamento de `handlePhotoChange` no
@@ -93,41 +100,7 @@ export function FindingCard({
     findingRef.current = finding;
   }, [finding]);
 
-  const title = findingTitle(finding);
-  // Gate divergente de 17/08/2026: os quatro campos que o servidor exige
-  // quando `estado === "identificado"` (ver `missingRequiredWhenIdentified`)
-  // ganham marcação âmbar enquanto vazios — mesmo tratamento visual que
-  // `lowConfidenceFields` já usa pra sugestão incerta da IA, reaproveitado
-  // em vez de inventar um segundo padrão. Recalculado a cada render: é
-  // função pura do próprio `finding`, não precisa de prop nem estado novo.
-  const missingFields = missingRequiredWhenIdentified(finding);
-
-  /**
-   * Uma única régua para os quatro campos obrigatórios, em vez de repetir a
-   * mesma condição amber quatro vezes com pequenas divergências — "não
-   * invente um segundo padrão" vale também para o próprio padrão dentro
-   * deste componente. Prioridade quando mais de um sinal existe (raro: os
-   * três descrevem estados diferentes do campo — vazio vs. preenchido com
-   * baixa confiança — então normalmente só um se aplica por vez):
-   * 1. IA incerta (`lowConfidenceFields`) — só existe quando o campo já tem
-   *    um valor, o palpite da IA;
-   * 2. mensagem real do servidor (`serverIssues`, Etapa 2) — mais específica
-   *    que o texto genérico, quando disponível (edição de item rejeitado);
-   * 3. obrigatório e vazio, calculado localmente (Etapa 1) — sempre
-   *    disponível, é o que resolve o caso preso mesmo sem a Etapa 2.
-   */
-  function fieldNotice(field: MissingField): { text: string } | null {
-    if ((field === "classificacao" || field === "gravidade") && lowConfidenceFields.has(field)) {
-      return { text: "IA não teve certeza — revise" };
-    }
-    if (serverIssues?.[field]) {
-      return { text: serverIssues[field]! };
-    }
-    if (missingFields.includes(field)) {
-      return { text: "Obrigatório — falta preencher" };
-    }
-    return null;
-  }
+  const title = (finding.flagId && FLAG_LABELS[finding.flagId]) || "Achado manual";
 
   function setEstado(estado: RiskState) {
     if (estado === "identificado") {
@@ -164,7 +137,31 @@ export function FindingCard({
     setCompressing(true);
     try {
       const fileList = Array.from(files);
-      const compressed = await Promise.all(fileList.map(compressPhoto));
+      // Sequencial, não `Promise.all`: `compressPhoto` decodifica cada foto em
+      // resolução plena (`new Image()` + `drawImage`) antes de reduzir — 3
+      // fotos de 12MP em paralelo somam ~147MB de bitmap RGBA simultâneos,
+      // mais os `File` originais retidos para o upload logo abaixo. Memória
+      // suficiente pra navegador móvel descartar a aba no meio da compressão,
+      // antes de `uploadFoto` sequer ser chamado — sem erro na tela, sem
+      // falha de rede, sem nada em log de servidor (achado de campo,
+      // 17/08/2026: "a foto não sobe, sai do app").
+      //
+      // `photoId` é gerado, e o evento "started" gravado (com `await`, não
+      // `void`) antes de chamar `compressPhoto` — é essa gravação, já
+      // confirmada em disco, que sobrevive à aba sendo descartada no meio da
+      // própria compressão. Só depois disso o risco começa.
+      const compressed: CompressedPhoto[] = [];
+      const photoIds: string[] = [];
+      for (const file of fileList) {
+        const photoId = newPhotoId();
+        photoIds.push(photoId);
+        const inputDims = await readImageDimensions(file);
+        await logCompressionStarted(photoId, file.size, inputDims);
+        const startedAt = Date.now();
+        const result = await compressPhoto(file);
+        await logCompressionCompleted(photoId, result.blob.size, result.width, result.height, Date.now() - startedAt);
+        compressed.push(result);
+      }
 
       const novosIds: string[] = [];
       const aindaLocais: RondaPhoto[] = [];
@@ -173,10 +170,14 @@ export function FindingCard({
       // Sequencial: em rede de campo, N uploads simultâneos de vários MB
       // pioram o tempo total e a chance de sucesso.
       for (const [i, foto] of compressed.entries()) {
+        const photoId = photoIds[i];
+        await logUploadRequested(photoId, foto.blob.size);
         try {
           const { fotoId } = await uploadFoto(foto.blob, fileList[i], finding.id);
           novosIds.push(fotoId);
-        } catch {
+          await logUploadCompleted(photoId);
+        } catch (error) {
+          await logUploadFailed(photoId, error instanceof Error ? error.message : "Falha desconhecida no upload.");
           aindaLocais.push(await photoToBase64(foto));
           originaisParaGuardar.push(fileList[i]);
         }
@@ -194,15 +195,29 @@ export function FindingCard({
       await Promise.all(originaisParaGuardar.map((file, i) => saveOriginalPhoto(finding.id, startIndex + i, file)));
 
       // Sugestão por foto (Fase 4) precisa de base64; derivada só aqui, e
-      // sem bloquear — sugestão que falha não é erro de foto.
+      // sem bloquear — sugestão que falha não é erro de foto. "answered" é
+      // gravado mesmo quando `applyPhotoSuggestion` não tem nada a aplicar
+      // (sugestão vazia) — é isso que distingue "o modelo não tinha nada a
+      // dizer" (fim normal) de "o app morreu no meio" (sem fim nenhum).
       void photoToBase64(compressed[0])
-        .then((photo) => applyPhotoSuggestion(photo))
+        .then(async (photo) => {
+          await logSuggestionRequested(finding.id);
+          try {
+            await applyPhotoSuggestion(photo);
+            await logSuggestionAnswered(finding.id);
+          } catch (error) {
+            await logSuggestionFailed(finding.id, error instanceof Error ? error.message : "Falha desconhecida na sugestão.");
+          }
+        })
         .catch(() => undefined);
     } catch (error) {
       setPhotoError(error instanceof Error ? error.message : "Falha ao processar a foto.");
     } finally {
       setCompressing(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      // Handler compartilhado pelos dois inputs — `event.target` é sempre o
+      // que disparou a mudança, então limpa o certo sem precisar decidir
+      // entre `cameraInputRef`/`galleryInputRef`.
+      event.target.value = "";
     }
   }
 
@@ -285,6 +300,19 @@ export function FindingCard({
 
   const isIdentified = finding.estado === "identificado";
 
+  // Mesmos 4 campos que `requiredWhenIdentified` exige no servidor — ver
+  // `lib/ronda/types.ts`. `serverIssues` cobre também o caso em que o campo
+  // já foi preenchido de novo mas o item da fila ainda carrega a mensagem
+  // do 422 anterior (recalculado a cada render, então some assim que
+  // `updateQueueSubmission` limpa `issues`).
+  const missingFields = missingRequiredWhenIdentified(finding);
+  function fieldPendingMessage(field: MissingField): string | undefined {
+    return serverIssues?.[field] ?? (missingFields.includes(field) ? "Obrigatório quando o risco é identificado." : undefined);
+  }
+  function isFieldPending(field: MissingField): boolean {
+    return missingFields.includes(field) || Boolean(serverIssues?.[field]);
+  }
+
   return (
     <div className="rounded-lg border border-black/10 bg-black/[0.03] p-3 dark:border-white/10 dark:bg-white/[0.03]">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -357,14 +385,14 @@ export function FindingCard({
         <div className="mt-3 flex flex-col gap-3 border-t border-black/10 pt-3 dark:border-white/10">
           <label
             className={`flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400 ${
-              fieldNotice("departamento") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
+              isFieldPending("departamento") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
             }`}
           >
             <span className="flex items-center gap-1.5">
               Departamento
-              {fieldNotice("departamento") && (
+              {isFieldPending("departamento") && (
                 <span className="rounded-full bg-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
-                  {fieldNotice("departamento")!.text}
+                  {fieldPendingMessage("departamento")}
                 </span>
               )}
             </span>
@@ -419,30 +447,58 @@ export function FindingCard({
                   </button>
                 </div>
               ))}
+              {/*
+                Dois botões, dois inputs, um handler — duplicação deliberada,
+                não descuido. `capture="environment"` no primeiro é o que dá
+                captura de um toque só (abre a câmera direto, sem passar pelo
+                seletor do navegador); é também o que IMPEDE galeria,
+                panorâmica e vídeo, e o que derrubava o app ao voltar da foto
+                (ver `#32`). O segundo, sem `capture`, abre o seletor nativo
+                (Câmera/Galeria/Arquivos) — é o único caminho pra galeria e
+                pro aplicativo de câmera completo. Nenhum dos dois substitui
+                o outro: "Tirar foto" é o toque rápido de campo; "Escolher" é
+                o que devolve o que o `#32` tirou. Não colapse os dois em um
+                input só — foi exatamente essa duplicação que fez o `#32`
+                remover `capture` pra recuperar o seletor, derrubando de
+                volta a captura de um toque.
+              */}
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => cameraInputRef.current?.click()}
                 disabled={compressing}
-                className="flex h-16 w-16 items-center justify-center rounded border border-dashed border-black/25 text-[10px] text-slate-600 hover:border-cyan-500 hover:text-cyan-600 disabled:opacity-50 dark:border-white/25 dark:text-slate-400 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
+                className="flex h-16 w-16 flex-col items-center justify-center rounded border border-dashed border-black/25 px-1 text-center text-[9px] leading-tight text-slate-600 hover:border-cyan-500 hover:text-cyan-600 disabled:opacity-50 dark:border-white/25 dark:text-slate-400 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
               >
-                {compressing ? "…" : "+ Foto"}
+                {compressing ? "…" : "Tirar foto"}
+              </button>
+              <button
+                type="button"
+                onClick={() => galleryInputRef.current?.click()}
+                disabled={compressing}
+                className="flex h-16 w-16 flex-col items-center justify-center rounded border border-dashed border-black/25 px-1 text-center text-[9px] leading-tight text-slate-600 hover:border-cyan-500 hover:text-cyan-600 disabled:opacity-50 dark:border-white/25 dark:text-slate-400 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
+              >
+                {compressing ? "…" : "Escolher"}
               </button>
             </div>
-            {/* capture="environment" abre a câmera traseira nativa direto — input padrão do navegador, sem lib. */}
-            <input ref={fileInputRef} type="file" accept="image/*" capture="environment" multiple onChange={handlePhotoChange} className="hidden" />
+            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoChange} className="hidden" />
+            <input ref={galleryInputRef} type="file" accept="image/*" multiple onChange={handlePhotoChange} className="hidden" />
             {photoError && <p className="text-red-400">{photoError}</p>}
           </div>
 
           <div
             className={`flex flex-col gap-1.5 text-xs text-slate-600 dark:text-slate-400 ${
-              fieldNotice("classificacao") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
+              lowConfidenceFields.has("classificacao") || isFieldPending("classificacao") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
             }`}
           >
             <span className="flex items-center gap-1.5">
               Classificação
-              {fieldNotice("classificacao") && (
+              {lowConfidenceFields.has("classificacao") && (
                 <span className="rounded-full bg-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
-                  {fieldNotice("classificacao")!.text}
+                  IA não teve certeza — revise
+                </span>
+              )}
+              {isFieldPending("classificacao") && (
+                <span className="rounded-full bg-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
+                  {fieldPendingMessage("classificacao")}
                 </span>
               )}
             </span>
@@ -481,14 +537,19 @@ export function FindingCard({
 
           <label
             className={`flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400 ${
-              fieldNotice("gravidade") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
+              lowConfidenceFields.has("gravidade") || isFieldPending("gravidade") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
             }`}
           >
             <span className="flex items-center gap-1.5">
               Gravidade
-              {fieldNotice("gravidade") && (
+              {lowConfidenceFields.has("gravidade") && (
                 <span className="rounded-full bg-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
-                  {fieldNotice("gravidade")!.text}
+                  IA não teve certeza — revise
+                </span>
+              )}
+              {isFieldPending("gravidade") && (
+                <span className="rounded-full bg-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
+                  {fieldPendingMessage("gravidade")}
                 </span>
               )}
             </span>
@@ -534,14 +595,14 @@ export function FindingCard({
           {/* textarea nativa, sem componente customizado — teclado nativo aparece normalmente, o que garante ditado por voz de graça (ADR-021). */}
           <label
             className={`flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400 ${
-              fieldNotice("descricao") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
+              isFieldPending("descricao") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
             }`}
           >
             <span className="flex items-center gap-1.5">
               Descrição
-              {fieldNotice("descricao") && (
+              {isFieldPending("descricao") && (
                 <span className="rounded-full bg-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
-                  {fieldNotice("descricao")!.text}
+                  {fieldPendingMessage("descricao")}
                 </span>
               )}
             </span>
