@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseIssuePath, mapIssuesToFindings, isOldFormatRejection } from "../issues";
+import { parseIssuePath, mapIssuesToFindings, isOldFormatRejection, canDiscardInvalidItem } from "../issues";
+import { newFinding, type RondaFinding } from "../types";
 
 test("parseIssuePath parses a valid achado field path", () => {
   assert.deepEqual(parseIssuePath("achados.abc123.departamento"), { findingId: "abc123", field: "departamento" });
@@ -66,5 +67,41 @@ test("isOldFormatRejection is false for a recoverable rejection — issues on re
       { path: "achados.f1.descricao", message: "descrição é obrigatória quando o risco foi identificado" },
     ]),
     false,
+  );
+});
+
+/**
+ * Achado 2 da revisão da branch: `isOldFormatRejection` usa `.some()`, então
+ * um payload misto (uma issue de campo real + uma de `achados.N.id`) já
+ * classifica como "formato antigo" na mensagem — mas `canDiscardInvalidItem`
+ * precisa ser mais conservador, porque ainda há um campo corrigível na tela.
+ */
+test("canDiscardInvalidItem is false when nothing is missing per the client gate but a server issue still maps to a loaded finding — even in a mixed payload with an id issue too", () => {
+  const achado = newFinding("trabalho_em_altura", { id: "f1" }); // identificado, tudo vazio ainda no cliente (não usado aqui — issues do servidor é que decidem)
+  const achados: RondaFinding[] = [{ ...achado, departamento: "Manutenção", classificacao: "atencao", gravidade: "baixa", descricao: "ok" }];
+  const mixedIssues = [
+    { path: "achados.f1.departamento", message: "departamento é obrigatório quando o risco foi identificado" },
+    { path: "achados.0.id", message: "Required" },
+  ];
+  assert.equal(canDiscardInvalidItem(achados, mixedIssues), false);
+});
+
+test("canDiscardInvalidItem is false when the client gate itself finds a missing field, regardless of issues", () => {
+  const incomplete = [newFinding("trabalho_em_altura", { id: "f1", classificacao: "atencao" })]; // sem departamento/gravidade/descricao
+  assert.equal(canDiscardInvalidItem(incomplete, undefined), false);
+});
+
+test("canDiscardInvalidItem is true only when there's truly nothing to fix here — no client-side missing field and no issue maps to a loaded achado", () => {
+  const complete = [newFinding("trabalho_em_altura", { id: "f1", departamento: "Manutenção", classificacao: "atencao", gravidade: "baixa", descricao: "ok" })];
+  assert.equal(canDiscardInvalidItem(complete, undefined), true, "no issues at all, nothing missing client-side — genuinely stuck, pre-migration item");
+  assert.equal(
+    canDiscardInvalidItem(complete, [{ path: "achados.0.id", message: "Required" }]),
+    true,
+    "old-format issue that doesn't address any currently-loaded achado",
+  );
+  assert.equal(
+    canDiscardInvalidItem(complete, [{ path: "achados.f1.departamento", message: "departamento é obrigatório quando o risco foi identificado" }]),
+    false,
+    "issue maps to a real, currently-loaded field — still fixable",
   );
 });

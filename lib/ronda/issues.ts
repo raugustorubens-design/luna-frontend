@@ -6,6 +6,9 @@
  * permite acender o campo certo no card certo em vez de só mostrar a
  * contagem que o 422 original trazia.
  */
+import type { RondaFinding } from "./types";
+import { findingsWithMissingFields } from "./types";
+
 export interface ValidationIssue {
   path: string;
   message: string;
@@ -62,4 +65,29 @@ export function mapIssuesToFindings(issues: ValidationIssue[], findingIds: Set<s
 export function isOldFormatRejection(issues: ValidationIssue[] | undefined): boolean {
   if (!issues || issues.length === 0) return true;
   return issues.some((issue) => parseIssuePath(issue.path)?.field === "id");
+}
+
+/**
+ * Se é seguro oferecer "Descartar" pra um item "invalid" — deliberadamente
+ * mais conservador do que `isOldFormatRejection`, que decide só a
+ * *mensagem*. `isOldFormatRejection` usa `.some()`: basta uma issue em
+ * `.id` pra classificar o payload inteiro como "formato antigo", mesmo que
+ * outra issue do mesmo 422 aponte pra um campo de um achado que ainda está
+ * na lista carregada — um payload misto assim ainda tem o que corrigir
+ * editando o achado, só não é 100% do que o servidor reclamou. Manter a
+ * mensagem "formato antigo" nesse caso está certo (a explicação técnica
+ * exata não é o ponto); oferecer "Descartar" não — é oferecer perda de dado
+ * (fotos que só existem neste aparelho) por cima de algo que dava pra
+ * salvar.
+ *
+ * `true` só quando não há **nada** corrigível nesta tela: nem o gate do
+ * cliente sobre o conteúdo já carregado (`findingsWithMissingFields`), nem
+ * uma issue do servidor que mapeia pra um campo de um achado que ainda
+ * existe na lista (`mapIssuesToFindings(...).byFinding`).
+ */
+export function canDiscardInvalidItem(achados: RondaFinding[], issues: ValidationIssue[] | undefined): boolean {
+  if (findingsWithMissingFields(achados).length > 0) return false;
+  const findingIds = new Set(achados.map((finding) => finding.id));
+  const { byFinding } = mapIssuesToFindings(issues ?? [], findingIds);
+  return Object.keys(byFinding).length === 0;
 }

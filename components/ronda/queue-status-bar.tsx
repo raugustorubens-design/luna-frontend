@@ -1,6 +1,7 @@
 "use client";
 
 import type { QueueCounts, QueueItem } from "@/lib/ronda/db";
+import { canDiscardInvalidItem } from "@/lib/ronda/issues";
 
 /**
  * "Usuário precisa conseguir ver, na própria tela, quantos achados estão
@@ -67,26 +68,32 @@ export function QueueStatusBar({
         <div className="flex flex-col gap-2 border-t border-orange-400/30 bg-orange-400/10 px-4 py-2 text-orange-900 dark:text-orange-200">
           <p>
             {counts.invalid} registro{counts.invalid === 1 ? "" : "s"} desta fila {counts.invalid === 1 ? "foi" : "foram"} rejeitado
-            {counts.invalid === 1 ? "" : "s"} pelo servidor e não {counts.invalid === 1 ? "vai" : "vão"} se resolver tentando de novo — provavelmente
-            {" "}foi{counts.invalid === 1 ? "" : "am"} salvo{counts.invalid === 1 ? "" : "s"} num formato antigo. Refaça a ronda pelo formulário e depois
-            descarte o item abaixo.
+            {counts.invalid === 1 ? "" : "s"} pelo servidor e não {counts.invalid === 1 ? "vai" : "vão"} se resolver tentando de novo — abra a ronda em
+            {" "}&quot;Ver rondas anteriores&quot; pra ver o motivo. Se for campo faltando, corrija e salve ali; se for formato antigo, refaça e descarte.
           </p>
-          {invalidItems.map((item) => (
-            <div key={item.localId} className="flex items-center justify-between gap-2 rounded border border-orange-400/40 bg-black/5 px-2 py-1 dark:bg-black/20">
-              <span className="truncate">
-                {item.submission.metadata.titulo || "(sem título)"} — {item.submission.metadata.data} — {item.lastError ?? "Rejeitado pelo servidor."}
-              </span>
-              {onDiscardInvalid && (
-                <button
-                  type="button"
-                  onClick={() => onDiscardInvalid(item.localId)}
-                  className="shrink-0 rounded border border-orange-400/50 px-2 py-1 text-[11px] hover:border-orange-500"
-                >
-                  Descartar
-                </button>
-              )}
-            </div>
-          ))}
+          {invalidItems.map((item) => {
+            // Mesma checagem de `ronda-editor.tsx` (`canDiscardInvalidItem`):
+            // "Descartar" só aparece quando não há nada corrigível nesta
+            // ronda — nem no gate do cliente sobre o conteúdo carregado, nem
+            // numa issue do servidor que ainda mapeia pra um achado da lista.
+            const allowDiscard = canDiscardInvalidItem(item.submission.achados, item.issues);
+            return (
+              <div key={item.localId} className="flex items-center justify-between gap-2 rounded border border-orange-400/40 bg-black/5 px-2 py-1 dark:bg-black/20">
+                <span className="truncate">
+                  {item.submission.metadata.titulo || "(sem título)"} — {item.submission.metadata.data} — {item.lastError ?? "Rejeitado pelo servidor."}
+                </span>
+                {onDiscardInvalid && allowDiscard && (
+                  <button
+                    type="button"
+                    onClick={() => onDiscardInvalid(item.localId)}
+                    className="shrink-0 rounded border border-orange-400/50 px-2 py-1 text-[11px] hover:border-orange-500"
+                  >
+                    Descartar
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

@@ -7,7 +7,7 @@ import { deleteQueueItem, getQueueItem, updateQueueSubmission, type QueueStatus 
 import { trySyncPendingRondas } from "@/lib/ronda/queue";
 import { duplicateFinding, findingsWithMissingFields, type RondaFinding, type RondaMetadata } from "@/lib/ronda/types";
 import { ENTRY_STATUS_LABEL } from "@/lib/ronda/list-view";
-import { mapIssuesToFindings, isOldFormatRejection, type ValidationIssue } from "@/lib/ronda/issues";
+import { mapIssuesToFindings, isOldFormatRejection, canDiscardInvalidItem, type ValidationIssue } from "@/lib/ronda/issues";
 import { FindingCard } from "./finding-card";
 
 /**
@@ -99,6 +99,15 @@ function Editor({ source }: { source: EditorSource }) {
     [queueIssues, findings],
   );
   const isOldFormat = clientMissingFields.length === 0 && isOldFormatRejection(queueIssues);
+  /**
+   * Achado 2 (revisão da branch): mais conservador que `isOldFormat`, de
+   * propósito — ver a nota em `canDiscardInvalidItem`. Um payload misto
+   * (issue de campo real + issue de `id`) pode continuar classificado como
+   * "formato antigo" na mensagem e ainda assim não permitir "Descartar",
+   * porque uma das issues aponta pra um campo de um achado que ainda está
+   * na lista carregada.
+   */
+  const allowDiscardInvalid = queueStatus !== "invalid" || canDiscardInvalidItem(findings, queueIssues);
 
   async function handleSave() {
     if (!metadata) return;
@@ -233,7 +242,14 @@ function Editor({ source }: { source: EditorSource }) {
             <p className="text-xs text-emerald-500">{isQueue ? "Salvo neste aparelho e recolocado na fila de envio." : "Alterações salvas."}</p>
           )}
 
-          {isQueue && (
+          {/*
+            Escondido quando há algo corrigível na tela — nem
+            `findingsWithMissingFields` nem uma issue mapeada pra um achado
+            carregado, ver `canDiscardInvalidItem`. Oferecer "descartar" pra
+            uma ronda que só precisa de um campo preenchido seria oferecer
+            perda de dado: as fotos de um achado só existem neste aparelho.
+          */}
+          {isQueue && allowDiscardInvalid && (
             <button type="button" onClick={() => void handleDiscard()} className="self-start text-xs text-red-500 underline dark:text-red-400">
               Descartar esta ronda do aparelho
             </button>
