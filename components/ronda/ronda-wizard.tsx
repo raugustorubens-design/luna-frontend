@@ -343,7 +343,8 @@ export function RondaWizard() {
         {draftRecovered && step !== "done" && (
           <div className="mb-3 flex items-start justify-between gap-3 rounded border border-cyan-500/40 bg-cyan-500/10 p-2.5 text-xs text-cyan-800 dark:text-cyan-300">
             <p>
-              Ronda em andamento recuperada deste aparelho — nada do que você já tinha preenchido se perdeu.
+              Ronda em andamento recuperada deste aparelho, a partir do último salvamento automático — confira se
+              está tudo aqui, principalmente uma foto que estivesse processando na hora em que o app fechou.
               <button type="button" onClick={startNewRonda} className="ml-2 underline">
                 Começar do zero
               </button>
