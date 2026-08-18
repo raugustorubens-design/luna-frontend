@@ -30,6 +30,111 @@
   --luna-glow: 0 0 24px hsl(var(--luna-cyan) / 0.25);
 }
 
+/* ===========================================================================
+ * ADR-022 — paleta LUNA, 17/08/2026.
+ *
+ * Bloco ADITIVO: nada acima daqui foi alterado. Estes tokens não são uma
+ * paleta nova — são os valores que já vivem em `/ronda` (Safety Walk),
+ * extraídos de `components/ronda/theme-provider.tsx` e
+ * `components/ronda/finding-card.tsx`, promovidos a tokens do produto
+ * inteiro. É a única paleta do repositório que passou por campo, por
+ * contraste medido e por relatório impresso.
+ *
+ * Prefixo `--luna-*` de propósito: não colide com os tokens estruturais do
+ * shadcn/radix acima (`--background`, `--primary`, …), que continuam
+ * declarados e continuam sendo lidos pelos componentes existentes.
+ *
+ * Consumidores hoje: `components/site/*` (Modo Usuário v2, rota `/v2`) e
+ * `components/forge/*-v2` (`/forge?layout=v2`). Nenhum componente antigo
+ * lê daqui.
+ * ======================================================================== */
+:root {
+  /* --- invariantes: iguais nos dois temas ------------------------------ */
+
+  /* Midnight — cor de marca. É o `themeColor` do PWA em `app/ronda/layout.tsx`,
+     a base do degradê escuro e o texto sobre âmbar. Nunca muda com o tema. */
+  --luna-midnight: #1e2761;
+  /* Quase preto azulado do topo do degradê. Não é #000: mantém o mesmo viés
+     azul do Midnight, então a interpolação fica numa família de matiz só, sem
+     passar por um meio-tom acinzentado. Mesmo raciocínio já registrado em
+     `theme-provider.tsx`. */
+  --luna-ink: #05060b;
+  /* Papel — fundo do tema claro e texto do escuro. Mesmo valor nos dois
+     papéis, invertido. */
+  --luna-paper: #f4f6fb;
+
+  /* Classificação — hex do protótipo real do relatório, os mesmos três de
+     `CLASSIFICATION_FILL_CLASS` em `finding-card.tsx`. Sólidos nos dois
+     temas, sem variante clara: um achado "não conformidade" tem a mesma cor
+     no celular em campo, no relatório impresso e no site. É essa igualdade
+     que dá sentido à padronização — variante por tema a desfaz. */
+  --luna-ok: #2e7d32;
+  --luna-warn: #e8a33d;
+  --luna-fail: #c62828;
+  --luna-on-ok: #ffffff;
+  /* Midnight, não branco. Branco sobre #E8A33D foi medido em 2,16:1 —
+     reprova AA (4,5:1). O fundo é cor de marca e não se mexe; corrige-se o
+     texto. Medição registrada em `finding-card.tsx`. */
+  --luna-on-warn: #1e2761;
+  --luna-on-fail: #ffffff;
+
+  /* --- tema escuro (padrão do produto, como em /ronda) ------------------ */
+  --luna-bg: var(--luna-midnight);
+  --luna-bg-image: linear-gradient(180deg, var(--luna-ink) 0%, var(--luna-midnight) 100%);
+  /* Superfície é translucidez, nunca cor nova. É o que faz os dois temas se
+     espelharem sem uma segunda paleta — não há um único cinza neutro aqui. */
+  --luna-surface: rgba(255, 255, 255, 0.03);
+  --luna-surface-2: rgba(255, 255, 255, 0.06);
+  --luna-surface-3: rgba(255, 255, 255, 0.09);
+  --luna-line: rgba(255, 255, 255, 0.1);
+  --luna-line-2: rgba(255, 255, 255, 0.15);
+  --luna-line-3: rgba(255, 255, 255, 0.25);
+  --luna-text: var(--luna-paper);
+  --luna-text-2: rgba(244, 246, 251, 0.72);
+  --luna-text-3: rgba(244, 246, 251, 0.48);
+  --luna-accent: #22d3ee; /* cyan-400, o hover do escuro em /ronda */
+  --luna-on-accent: #05131a;
+  --luna-scheme: dark;
+
+  /* --- tipografia e métrica -------------------------------------------- */
+  /* As famílias vêm de `next/font/google` em `app/layout.tsx`; o fallback
+     cobre o intervalo antes da fonte carregar e o caso de rede indisponível. */
+  --luna-display: var(--font-archivo), "Arial Narrow", system-ui, sans-serif;
+  --luna-body: var(--font-plex-sans), system-ui, -apple-system, sans-serif;
+  --luna-mono: var(--font-plex-mono), ui-monospace, "SF Mono", Menlo, monospace;
+
+  --luna-step--1: 0.8125rem;
+  --luna-step-0: 0.9375rem;
+  --luna-step-1: 1.125rem;
+  --luna-step-2: 1.5rem;
+  --luna-step-3: 2.25rem;
+  --luna-step-4: clamp(2.75rem, 7vw, 5.25rem);
+
+  --luna-radius: 6px;
+  --luna-pad: clamp(1.25rem, 5vw, 4rem);
+}
+
+/* Tema claro do site. `data-theme` é posto por `components/theme/
+   site-theme-provider.tsx`, que é irmão — e não extensão — do provider de
+   `/ronda`. `/ronda` continua alternando pela classe `dark` em
+   `#ronda-theme-root`, sem relação nenhuma com este atributo. */
+[data-theme="light"] {
+  --luna-bg: var(--luna-paper);
+  --luna-bg-image: linear-gradient(180deg, #ffffff 0%, var(--luna-paper) 100%);
+  --luna-surface: rgba(0, 0, 0, 0.03);
+  --luna-surface-2: rgba(0, 0, 0, 0.05);
+  --luna-surface-3: rgba(0, 0, 0, 0.08);
+  --luna-line: rgba(0, 0, 0, 0.1);
+  --luna-line-2: rgba(0, 0, 0, 0.15);
+  --luna-line-3: rgba(0, 0, 0, 0.25);
+  --luna-text: var(--luna-midnight);
+  --luna-text-2: rgba(30, 39, 97, 0.74);
+  --luna-text-3: rgba(30, 39, 97, 0.52);
+  --luna-accent: #06b6d4; /* cyan-500, o hover do claro em /ronda */
+  --luna-on-accent: #ffffff;
+  --luna-scheme: light;
+}
+
 .forge-brand-glow {
   box-shadow: var(--luna-glow);
 }
@@ -146,4 +251,193 @@ body {
   pointer-events: none;
   background: linear-gradient(transparent 50%, rgba(255,255,255,0.03) 51%);
   background-size: 100% 5px;
+}
+
+/* ---------------------------------------------------------------------------
+ * ADR-022 — superfícies v2 (`/v2` e `/forge?layout=v2`), 17/08/2026.
+ *
+ * Escopado por `.luna-v2` pelo mesmo motivo que as regras de `/ronda` são
+ * escopadas por `.ronda-locked`: as três superfícies dividem o `<body>` do
+ * layout raiz, e nenhuma delas pode herdar nada da outra. Sem este escopo,
+ * `/` e `/forge` mudariam de tipografia junto — que é exatamente o que esta
+ * etapa não faz.
+ *
+ * Só o que não dá para expressar em utilitário do Tailwind mora aqui:
+ * tipografia de base, o degradê do hero, a grade do fundo e a revelação por
+ * rolagem. Cor, espaçamento e borda vêm dos tokens `--luna-*` direto nas
+ * classes dos componentes.
+ * ------------------------------------------------------------------------ */
+.luna-v2 {
+  background-color: var(--luna-bg);
+  color: var(--luna-text);
+  color-scheme: var(--luna-scheme);
+  font-family: var(--luna-body);
+  font-size: var(--luna-step-0);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.luna-v2 h1,
+.luna-v2 h2,
+.luna-v2 h3,
+.luna-v2 h4 {
+  font-family: var(--luna-display);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.015em;
+}
+
+.luna-v2 :focus-visible {
+  outline: 2px solid var(--luna-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Grade do hero. `mask-image` some antes do fim da seção pra grade não
+   competir com o texto abaixo dela. */
+.luna-grid {
+  background-image:
+    linear-gradient(to right, var(--luna-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--luna-line) 1px, transparent 1px);
+  background-size: 88px 88px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, transparent 78%);
+  mask-image: linear-gradient(to bottom, #000 0%, transparent 78%);
+}
+
+/* Revelação por rolagem — estado inicial só é aplicado quando o JS está de
+   pé (`.luna-reveal-armed` vem do próprio observador). Sem isso, quem entra
+   com JS desligado ficaria com a página inteira invisível. */
+.luna-v2 .luna-reveal-armed .luna-reveal {
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity 0.6s ease,
+    transform 0.6s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.luna-v2 .luna-reveal-armed .luna-reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* A barra colorida à esquerda de cada linha do razão cresce de cima pra
+   baixo quando a tabela entra na tela — é o mesmo gesto do cartão de achado
+   da ronda, e é a assinatura da página. */
+.luna-ledger-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--luna-text-3);
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.luna-ledger-row[data-c="ok"]::before {
+  background: var(--luna-ok);
+}
+.luna-ledger-row[data-c="warn"]::before {
+  background: var(--luna-warn);
+}
+.luna-ledger-row[data-c="fail"]::before {
+  background: var(--luna-fail);
+}
+.luna-ledger.is-revealed .luna-ledger-row::before {
+  transform: scaleY(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .luna-v2 *,
+  .luna-v2 *::before,
+  .luna-v2 *::after {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+  .luna-v2 .luna-reveal-armed .luna-reveal {
+    opacity: 1;
+    transform: none;
+  }
+  .luna-ledger .luna-ledger-row::before {
+    transform: scaleY(1);
+  }
+}
+
+/* ===========================================================================
+ * ADR-022 — religação de paleta, 17/08/2026.
+ *
+ * Os componentes shadcn/radix do Forge já leem `--background`, `--primary`,
+ * `--border` e companhia. Reapontar a variável muda a aparência sem tocar em
+ * um único componente — e reverter é apagar este bloco inteiro, não desfazer
+ * trinta arquivos. Nenhuma declaração original foi removida: cada linha traz
+ * o valor anterior em comentário ao lado.
+ *
+ * Revisão do Engenheiro, luna-frontend#28 (17/08/2026): o bloco anterior
+ * (`--luna-*`, acima) diz "nenhum componente antigo lê daqui" — verdade só
+ * para aquele bloco. Este aqui é o oposto de propósito: religa exatamente o
+ * que componente antigo já lê. Consequência real, conferida arquivo por
+ * arquivo, não assumida:
+ *
+ *   - `/forge` (o layout ATUAL, `forge-layout.tsx`) MUDA DE COR — usa
+ *     `border-b`, `bg-primary`, `text-muted-foreground` direto, e
+ *     `components/ui/{button,resizable,tabs}.tsx` (shadcn) leem os mesmos
+ *     tokens. O *arranjo* dos painéis não muda; a paleta, sim — é o que o
+ *     pacote pediu.
+ *   - `/` (Modo Usuário atual, `app/page.tsx`) NÃO MUDA — nenhum componente
+ *     que ele renderiza (`hero.tsx`, `cognitive-dashboard.tsx` etc.) importa
+ *     `components/ui/*` nem usa `bg-background`/`text-foreground`/
+ *     `border-border`/`bg-primary`/`bg-muted`/`text-muted-foreground`/
+ *     `bg-secondary`/`bg-destructive`/`ring-ring` — confirmado por grep no
+ *     momento desta revisão, não por suposição. Usa `luna.*` do
+ *     `tailwind.config.ts` direto, como o comentário original de
+ *     `app/globals.css` já registrava.
+ *   - `/ronda` NÃO MUDA — valores diretos (`bg-[#F4F6FB] dark:bg-[#1E2761]`
+ *     e companhia), nenhum destes tokens.
+ *
+ * Aproximação assumida: o shadcn lê `hsl(var(--token))` sem canal alfa, então
+ * as superfícies translúcidas da paleta (branco 6%, 15% …) entram aqui já
+ * compostas sobre o Midnight. Onde a translucidez importa de verdade — os
+ * componentes novos — o token `--luna-surface*` é usado direto, com alfa.
+ *
+ * `--radius` NÃO é religado de propósito. Ele é global (o Tailwind mapeia
+ * `rounded-lg/md/sm` para ele) e três telas de `/ronda` usam `rounded-lg`:
+ * mexer nele mudaria a aparência da ronda, que é justamente o que esta etapa
+ * não pode fazer. Os componentes novos usam `--luna-radius`, próprio.
+ * ======================================================================== */
+:root {
+  --background: 231 53% 25%; /* era: 220 14% 6%  — #1E2761, Midnight */
+  --foreground: 222 47% 97%; /* era: 210 20% 92% — #F4F6FB, papel */
+  --muted: 232 42% 30%; /* era: 220 12% 14% — branco 6% sobre Midnight */
+  --muted-foreground: 230 20% 77%; /* era: 215 12% 65% — papel a 72% */
+  --border: 233 31% 36%; /* era: 220 12% 20% — branco 15% sobre Midnight */
+  --ring: 188 86% 53%; /* era: 190 80% 55% — #22D3EE, acento do escuro */
+  --primary: 188 86% 53%; /* era: 190 80% 55% — #22D3EE */
+  --primary-foreground: 200 68% 6%; /* era: 220 20% 8%  — #05131A */
+  /* Não há violeta na paleta do Safety Walk. "Secundário" vira a superfície
+     translúcida mais forte (branco 9%), não uma segunda cor de marca. */
+  --secondary: 232 38% 32%; /* era: 260 40% 60% */
+  --secondary-foreground: 222 47% 97%; /* era: 220 20% 8%  — papel */
+  --destructive: 0 66% 47%; /* era: 0 62% 50%   — #C62828, não conformidade */
+  --destructive-foreground: 0 0% 100%; /* era: 210 20% 96% — #FFFFFF */
+
+  --luna-cyan: 188 86% 53%; /* era: 190 82% 60% — usado por .forge-accent-text */
+}
+
+[data-theme="light"] {
+  --background: 222 47% 97%; /* #F4F6FB, papel */
+  --foreground: 231 53% 25%; /* #1E2761, Midnight */
+  --muted: 220 20% 94%; /* preto 5% sobre papel */
+  --muted-foreground: 231 26% 42%; /* Midnight a 74% */
+  --border: 223 17% 84%; /* preto 15% sobre papel */
+  --ring: 189 94% 43%; /* #06B6D4, acento do claro */
+  --primary: 189 94% 43%; /* #06B6D4 */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 222 15% 90%; /* preto 8% sobre papel */
+  --secondary-foreground: 231 53% 25%;
+  --destructive: 0 66% 47%; /* #C62828 — sólido nos dois temas, sem variante clara */
+  --destructive-foreground: 0 0% 100%;
+
+  --luna-cyan: 189 94% 43%;
 }

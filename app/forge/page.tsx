@@ -1,4 +1,5 @@
 import { ForgeLayout } from "@/components/forge/forge-layout";
+import { ForgeLayoutV2 } from "@/components/forge/forge-layout-v2";
 
 export const metadata = {
   title: "LUNA Forge — Dev Mode",
@@ -15,8 +16,17 @@ export const dynamic = "force-dynamic";
 export default async function ForgePage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; layout?: string }>;
 }) {
-  const { tab } = await searchParams;
-  return <ForgeLayout initialTab={tab === "convergia" ? "convergia" : "workspace"} />;
+  const { tab, layout } = await searchParams;
+  const initialTab = tab === "convergia" ? "convergia" : "workspace";
+  // ADR-022 — `/forge` continua exatamente como hoje; `/forge?layout=v2`
+  // abre o novo. `?tab=convergia` é link salvo e precisa continuar
+  // funcionando nos dois: no v2 a Convergia vira alvo da trilha, mas o
+  // parâmetro antigo ainda leva lá (ver `forge-layout-v2.tsx`).
+  return layout === "v2" ? (
+    <ForgeLayoutV2 initialTab={initialTab} />
+  ) : (
+    <ForgeLayout initialTab={initialTab} /> // padrão, inalterado
+  );
 }

@@ -1514,6 +1514,49 @@ cada ronda antiga listada ali e descartar o item.
   correta pro contrato atual; decidido não "fazer o 422 sumir" mudando o
   que o servidor aceita.
 
+
+---
+
+## 2026-08-17 — Revisão do Engenheiro (`luna-frontend#28`): regex de `constitution-check.mjs` generalizada por família de módulo
+
+**Nota de reconciliação, importante — a regra ficou mais permissiva de
+propósito, com motivo, não é afrouxamento acidental para o CI passar.**
+
+A entrada de mais cedo hoje (ver acima, "fix(ci): constitution-check.mjs
+nao pode reprovar prosa mencionando Supabase") estreitou `DATABASE_TOKENS`
+de "a palavra solta em qualquer lugar do arquivo" para "especificador de
+import por nome exato". A revisão do Engenheiro testou essa versão à mão e
+achou quatro buracos: `@supabase/ssr` (o pacote Supabase mais usado em
+Next hoje) e `drizzle-orm/pg-core` (o import normal do Drizzle) não
+casavam por serem subcaminhos, não o nome exato listado; `import "pg"`
+(efeito colateral, sem `from`) não casava por faltar a forma sintática;
+`postgres`/`pg-promise` nunca estiveram cobertos.
+
+A regra passa a casar por **família de módulo** — `@supabase/*` (qualquer
+pacote da organização), `drizzle-orm` e qualquer subcaminho dele,
+`pg`/`postgres`/`pg-promise` por nome exato — nas **cinco** formas de
+referenciar um módulo (`import … from`, `export … from`, `import "x"` de
+efeito colateral, `require()`, `import()` dinâmico). Extraída para
+`scripts/constitution-rules.mjs` (antes vivia inline em
+`constitution-check.mjs`) especificamente para poder ser testada — a
+revisão pediu "trave em teste, uma regra que ninguém exercita volta a
+afrouxar na próxima vez que reprovar algo legítimo". Um `.d.mts` colocado
+junto (`constitution-rules.d.mts`) porque `allowJs: false` no
+`tsconfig.json` — sem ele, o `.test.ts` que importa o `.mjs` não
+tipifica.
+
+### Verificado
+
+- `pnpm typecheck` — limpo.
+- `pnpm test` — **75 testes** (69 → 75; 5 novos em
+  `scripts/__tests__/constitution-rules.test.ts`, um caso positivo e um
+  negativo por família, incluindo os quatro buracos da tabela da revisão
+  e o caso de regressão — prosa mencionando "Supabase" continua não
+  casando). `package.json` ganhou `scripts/__tests__/*.test.ts` no glob
+  do `test`.
+- `pnpm run test:constitution` — limpo, 98 arquivos.
+- `pnpm build` — limpo.
+
 ---
 
 ## 2026-08-17 — Fix urgente: gate do wizard divergia do servidor — ronda do Sylvamo presa em campo com 6 problemas não nomeados e instrução contraditória
