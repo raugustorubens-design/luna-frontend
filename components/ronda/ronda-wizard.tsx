@@ -342,8 +342,21 @@ export function RondaWizard() {
       <main className="ronda-scroll-pad min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
         {draftRecovered && step !== "done" && (
           <div className="mb-3 flex items-start justify-between gap-3 rounded border border-cyan-500/40 bg-cyan-500/10 p-2.5 text-xs text-cyan-800 dark:text-cyan-300">
+            {/*
+              Antes esta mensagem afirmava "nada do que você já tinha
+              preenchido se perdeu" — e é exatamente quando uma foto se perde
+              (app derrubado no meio da captura/compressão, antes do autosave
+              seguinte gravar o rascunho) que esta tela aparece. O rascunho
+              recupera o que já tinha sido salvo até o último autosave — não
+              tem como saber, hoje, se havia uma foto em processamento no
+              instante da queda (esse rastro é o que a instrumentação de
+              IndexedDB de uma etapa futura vai deixar). Até lá, a mensagem
+              não promete o que não sabe: pede pra conferir foto por foto.
+            */}
             <p>
-              Ronda em andamento recuperada deste aparelho — nada do que você já tinha preenchido se perdeu.
+              Ronda em andamento recuperada deste aparelho, com os dados até o último salvamento automático.
+              Confira as fotos de cada achado — uma foto sendo processada no momento em que o app fechou
+              pode não ter sido salva.
               <button type="button" onClick={startNewRonda} className="ml-2 underline">
                 Começar do zero
               </button>

@@ -73,7 +73,10 @@ export function FindingCard({
   const [compressing, setCompressing] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [lowConfidenceFields, setLowConfidenceFields] = useState<Set<"classificacao" | "gravidade">>(new Set());
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Dois inputs ocultos, um por caminho de foto — ver o comentário junto dos
+  // botões, mais abaixo, para o motivo de não colapsar num só.
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   // A leitura de foto (Fase 4) é assíncrona e pode terminar depois de vários
   // re-renders — `finding` capturado no fechamento de `handlePhotoChange` no
@@ -172,7 +175,10 @@ export function FindingCard({
       setPhotoError(error instanceof Error ? error.message : "Falha ao processar a foto.");
     } finally {
       setCompressing(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      // Handler compartilhado pelos dois inputs — `event.target` é sempre o
+      // que disparou a mudança, então limpa o certo sem precisar decidir
+      // entre `cameraInputRef`/`galleryInputRef`.
+      event.target.value = "";
     }
   }
 
@@ -402,20 +408,40 @@ export function FindingCard({
                   </button>
                 </div>
               ))}
+              {/*
+                Dois botões, dois inputs, um handler — duplicação deliberada,
+                não descuido. `capture="environment"` no primeiro é o que dá
+                captura de um toque só (abre a câmera direto, sem passar pelo
+                seletor do navegador); é também o que IMPEDE galeria,
+                panorâmica e vídeo, e o que derrubava o app ao voltar da foto
+                (ver `#32`). O segundo, sem `capture`, abre o seletor nativo
+                (Câmera/Galeria/Arquivos) — é o único caminho pra galeria e
+                pro aplicativo de câmera completo. Nenhum dos dois substitui
+                o outro: "Tirar foto" é o toque rápido de campo; "Escolher" é
+                o que devolve o que o `#32` tirou. Não colapse os dois em um
+                input só — foi exatamente essa duplicação que fez o `#32`
+                remover `capture` pra recuperar o seletor, derrubando de
+                volta a captura de um toque.
+              */}
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => cameraInputRef.current?.click()}
                 disabled={compressing}
-                className="flex h-16 w-16 items-center justify-center rounded border border-dashed border-black/25 text-[10px] text-slate-600 hover:border-cyan-500 hover:text-cyan-600 disabled:opacity-50 dark:border-white/25 dark:text-slate-400 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
+                className="flex h-16 w-16 flex-col items-center justify-center rounded border border-dashed border-black/25 px-1 text-center text-[9px] leading-tight text-slate-600 hover:border-cyan-500 hover:text-cyan-600 disabled:opacity-50 dark:border-white/25 dark:text-slate-400 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
               >
-                {compressing ? "…" : "+ Foto"}
+                {compressing ? "…" : "Tirar foto"}
+              </button>
+              <button
+                type="button"
+                onClick={() => galleryInputRef.current?.click()}
+                disabled={compressing}
+                className="flex h-16 w-16 flex-col items-center justify-center rounded border border-dashed border-black/25 px-1 text-center text-[9px] leading-tight text-slate-600 hover:border-cyan-500 hover:text-cyan-600 disabled:opacity-50 dark:border-white/25 dark:text-slate-400 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
+              >
+                {compressing ? "…" : "Escolher"}
               </button>
             </div>
-            {/* Sem `capture`: precisamos do seletor do navegador (Câmera/Galeria/Arquivos), não da
-                captura simples. `capture="environment"` pula o seletor e trava três coisas: não há
-                opção de galeria, a câmera abre sem os modos do app completo (panorâmica, vídeo) e o
-                app é despejado ao voltar da foto. NÃO reintroduzir `capture` aqui. */}
-            <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handlePhotoChange} className="hidden" />
+            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoChange} className="hidden" />
+            <input ref={galleryInputRef} type="file" accept="image/*" multiple onChange={handlePhotoChange} className="hidden" />
             {photoError && <p className="text-red-400">{photoError}</p>}
           </div>
 

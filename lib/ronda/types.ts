@@ -31,6 +31,10 @@ export const FLAG_LABELS: Record<string, string> = {
   movimentacao_de_cargas: "Movimentação de Cargas",
   maquinas_e_equipamentos: "Máquinas e Equipamentos",
   passivo_trabalhista: "Passivo Trabalhista",
+  // Flag nova no catálogo do servidor (`GET /convergia/ronda/flags`), sem
+  // entrada aqui ainda — aparecia com a chave crua ("protecao_contra_incendios")
+  // na Etapa 2 do wizard, entre "Passivo Trabalhista" e o rodapé.
+  protecao_contra_incendios: "Proteção contra Incêndios",
 };
 
 export const RISK_STATES = ["nao_avaliado", "identificado", "inexistente"] as const;
