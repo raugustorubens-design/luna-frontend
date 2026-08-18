@@ -16,7 +16,7 @@ import {
   type FindingClassification,
   type MissingField,
 } from "@/lib/ronda/types";
-import { compressPhoto, photoToBase64 } from "@/lib/ronda/photo";
+import { compressPhoto, photoToBase64, type CompressedPhoto } from "@/lib/ronda/photo";
 import { saveOriginalPhoto } from "@/lib/ronda/db";
 import { uploadFoto, rondaFotoUrl } from "@/lib/ronda/api-client";
 import { getFotoSugestao } from "@/lib/ronda/api-client";
@@ -123,7 +123,18 @@ export function FindingCard({
     setCompressing(true);
     try {
       const fileList = Array.from(files);
-      const compressed = await Promise.all(fileList.map(compressPhoto));
+      // Sequencial, não `Promise.all`: `compressPhoto` decodifica cada foto em
+      // resolução plena (`new Image()` + `drawImage`) antes de reduzir — 3
+      // fotos de 12MP em paralelo somam ~147MB de bitmap RGBA simultâneos,
+      // mais os `File` originais retidos para o upload logo abaixo. Memória
+      // suficiente pra navegador móvel descartar a aba no meio da compressão,
+      // antes de `uploadFoto` sequer ser chamado — sem erro na tela, sem
+      // falha de rede, sem nada em log de servidor (achado de campo,
+      // 17/08/2026: "a foto não sobe, sai do app").
+      const compressed: CompressedPhoto[] = [];
+      for (const file of fileList) {
+        compressed.push(await compressPhoto(file));
+      }
 
       const novosIds: string[] = [];
       const aindaLocais: RondaPhoto[] = [];
