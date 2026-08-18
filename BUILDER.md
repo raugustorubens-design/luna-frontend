@@ -1849,3 +1849,122 @@ Isolado, de propósito — nada mais tocado nesta entrada:
   behind`, superada pelo `#30`) — este trabalho partiu de `origin/main`
   limpo, confirmado por `git merge-base origin/main HEAD` batendo com a
   ponta de `origin/main` antes de qualquer commit.
+
+---
+
+## 2026-08-19 — Fechar a câmera: três PRs, com autorização de merge
+
+Pacote fechado em sequência — `#31` (compressão sequencial, já descrito
+acima), depois PR 1 (`#33`, dois caminhos de foto), PR 2 (`#34`,
+decodificação já reduzida), PR 3 (instrumentação mínima). Autorização
+explícita do Arquiteto: mergear cada PR após os próprios portões
+automáticos, com o portão de campo verificado **depois** do merge — troca
+aceitável porque as três mudanças são aditivas, o único usuário é o
+Arquiteto, e a ronda usada em campo agora é banco de teste.
+
+### Dado novo que motivou o pacote
+
+Depois do `#32` (que removeu `capture="environment"` para recuperar
+galeria/panorâmica), no aparelho real do Arquiteto: sem `capture`, o
+Android decidiu ir direto para a galeria de fotos, sem seletor — em vez do
+gerenciador de arquivos observado antes. Confirma o diagnóstico do `#32`
+(a ausência de `capture` deixa a escolha do que abrir inteiramente a cargo
+do sistema) e a necessidade do PR 1: os dois caminhos, lado a lado, tiram
+essa loteria de cima do usuário.
+
+### PR 1 — dois caminhos de foto (`#33`)
+
+`components/ronda/finding-card.tsx` ganhou dois inputs ocultos e dois
+botões — "Tirar foto" (`capture="environment"`, toque único) e "Escolher"
+(sem `capture`, seletor completo) — com um `ref` cada e o mesmo
+`handlePhotoChange`. Comentário no código para a duplicação não parecer
+descuido de uma sessão futura.
+
+Duas correções incluídas no mesmo PR: `protecao_contra_incendios` faltava
+em `FLAG_LABELS` (aparecia como chave crua na Etapa 2); a mensagem de
+recuperação de rascunho garantia que nada se perdeu, exatamente no caso em
+que uma foto em processamento se perde numa queda do app — agora pede
+conferência em vez de garantir o que não há como saber.
+
+Durante a implementação, `#31` (compressão sequencial, já em rascunho e
+verificado) foi mergeado primeiro, como instruído — o rebase de PR 1 por
+cima dele foi automático, sem conflito real (arquivos tocados são
+adjacentes na mesma função, não sobrepostos).
+
+### PR 2 — decodificar já reduzido (`#34`)
+
+`lib/ronda/photo.ts`: `parseImageDimensionsFromHeader` lê largura/altura
+direto dos primeiros 64KB do arquivo (marcador `SOF` do JPEG, `IHDR` do
+PNG) sem decodificar. Com a dimensão em mãos, `compressWithImageBitmap`
+usa `createImageBitmap` informando só o lado maior (`resizeWidth` ou
+`resizeHeight`, nunca os dois) — o navegador calcula o outro preservando
+proporção — com `imageOrientation: "from-image"` obrigatório e
+`OffscreenCanvas` quando disponível. `bitmap.close()` logo após desenhar;
+canvas zerado ao final. Teto por proporção: 1280px até 2,5:1, 2000px acima
+disso (panorâmica). Cabeçalho não reconhecido, truncado, ou
+`createImageBitmap` falhando: cai no caminho antigo, preservado.
+
+Testes novos, função pura: teto por proporção (padrão e panorâmica) e
+parse de cabeçalho (JPEG válido, PNG válido, truncado, formato não
+reconhecido) — 6 testes, `lib/ronda/__tests__/photo.test.ts`.
+
+### PR 3 — instrumentação mínima (`#35`)
+
+Novo store IndexedDB (`diagnostics`, `db.ts` v4→v5) grava eventos do
+pipeline de foto — compressão iniciada/concluída, upload
+pedido/concluído/falhou, sugestão pedida/respondida/falhou — cada um
+carimbado com `sessionId` (uma por abertura do app) e `correlationId` (id
+da foto para compressão/upload, id do achado para sugestão).
+
+O evento "started"/"requested" é gravado com `await` (não `void`) *antes*
+de a operação arriscada começar — é essa gravação, já confirmada em
+disco, que sobrevive à aba sendo descartada no meio. `lib/ronda/photo.ts`
+ganhou `width`/`height` em `CompressedPhoto` e exportou `readImageDimensions`
+só para a instrumentação registrar a dimensão sem decodificar de novo —
+nenhuma mudança na lógica de compressão em si.
+
+`lib/ronda/diagnostics.ts` concentra a parte pura (testável sem
+IndexedDB): `hasOrphanedStart` (algum início sem fim pelo mesmo
+`correlationId`), `summarizeCompressions`, `lastCompletedSessionSummary`
+(a sessão anterior mais recente — nunca a atual, que ainda está em
+andamento) e `selectDiagnosticEventKeysToDiscard` (mantém a sessão atual,
+a última anterior, e qualquer sessão com início órfão; descarta o resto —
+mesmo princípio de "diagnóstico não é histórico" já aplicado uma vez às
+fotos originais em `discardRondaLocalCopies`). 8 testes novos,
+`lib/ronda/__tests__/diagnostics.test.ts`.
+
+`components/ronda/ronda-list.tsx` ("Ver rondas anteriores") lê e limpa
+uma vez por montagem, mostra uma linha discreta — "Sessão anterior: N/M
+compressões de foto concluídas", com aviso só se M < N. Sem painel, sem
+gráfico, como pedido.
+
+### Verificação
+
+1. `npm run typecheck`, `npm test`, `npm run test:constitution`,
+   `npm run build` — limpos nos três PRs, cada um verificado antes do
+   commit e de novo (CI) antes do merge.
+2. `npm test`: 75 (ponto de partida) → 81 (PR 2, +6) → 89 (PR 3, +8).
+   Nenhum teste anterior alterado em nenhum dos três.
+3. `git merge-base origin/main HEAD` batendo com a ponta de `origin/main`
+   confirmado antes do primeiro commit de cada branch — inclusive depois
+   do rebase de PR 1 sobre o `#31` recém-mergeado.
+4. **Não verificado nesta sessão** (comportamento real de navegador
+   móvel, sem substituto em CI): `createImageBitmap`/`canvas`/`capture`
+   em dispositivo real, orientação EXIF de foto real, e o gate de campo
+   descrito abaixo. Por autorização do Arquiteto, os três PRs foram
+   mergeados antes dessa verificação — ela acontece depois, não antes.
+
+### Gate de campo — pendente, verificação pós-merge
+
+1. Dois botões aparecem no card do achado.
+2. "Tirar foto" abre a câmera direto.
+3. "Escolher" dá galeria e o aplicativo de câmera completo, com
+   panorâmica.
+4. Tirar uma foto pela câmera não fecha o app.
+5. Anexar uma panorâmica funciona e o detalhe fica legível no relatório.
+
+Se o item 4 ainda falhar depois do PR 2, o registro do PR 3 (linha "Sessão
+anterior" em "Ver rondas anteriores", ou consulta direta ao store
+`diagnostics`) vai mostrar uma compressão iniciada sem concluída — dado, não
+suposição, ao contrário do que essa mesma investigação tinha antes desta
+instrumentação existir.

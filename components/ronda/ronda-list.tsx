@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { listRondas, RondaSubmitError, type RondaSubmitResult } from "@/lib/ronda/api-client";
 import { cacheHistory } from "@/lib/ronda/db";
+import { getLastSessionSummaryAndCleanup } from "@/lib/ronda/diagnostics";
 import { buildRondaList, ENTRY_STATUS_LABEL, type RondaListEntry } from "@/lib/ronda/list-view";
 import { useRondaQueue } from "@/lib/ronda/use-ronda-queue";
 
@@ -40,6 +41,15 @@ export function RondaList() {
   const [server, setServer] = useState<RondaSubmitResult[] | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [diagnosticsSummary, setDiagnosticsSummary] = useState<{ started: number; completed: number } | null>(null);
+
+  // Lê o resumo da sessão anterior de instrumentação de foto (PR 3 — ver
+  // `lib/ronda/diagnostics.ts`) e aproveita pra descartar o que já não tem
+  // valor diagnóstico. Uma vez por montagem: nem toda sessão de fato muda o
+  // resumo, e a limpeza não precisa rodar mais que isso.
+  useEffect(() => {
+    void getLastSessionSummaryAndCleanup().then(setDiagnosticsSummary);
+  }, []);
 
   const loadServer = useCallback(async () => {
     setLoading(true);
@@ -77,6 +87,19 @@ export function RondaList() {
           Toque numa ronda para editar achados ou a observação geral.
           {localCount > 0 && ` ${localCount} ainda ${localCount === 1 ? "está" : "estão"} neste aparelho.`}
         </p>
+        {/*
+          Linha discreta, não painel — instrumentação mínima (PR 3), só pra
+          um "iniciada sem concluída" da sessão anterior não passar
+          despercebido. `completed < started` é a assinatura de uma aba
+          descartada no meio da compressão; sem instrumentação isso não
+          deixava rastro nenhum.
+        */}
+        {diagnosticsSummary && (
+          <p className="text-[10px] text-slate-500 dark:text-slate-500">
+            Sessão anterior: {diagnosticsSummary.completed}/{diagnosticsSummary.started} compressões de foto concluídas
+            {diagnosticsSummary.completed < diagnosticsSummary.started && " — alguma pode ter sido interrompida"}
+          </p>
+        )}
       </header>
 
       <main className="ronda-scroll-pad min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">

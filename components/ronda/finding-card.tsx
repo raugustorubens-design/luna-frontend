@@ -16,10 +16,21 @@ import {
   type FindingClassification,
   type MissingField,
 } from "@/lib/ronda/types";
-import { compressPhoto, photoToBase64, type CompressedPhoto } from "@/lib/ronda/photo";
+import { compressPhoto, photoToBase64, readImageDimensions, type CompressedPhoto } from "@/lib/ronda/photo";
 import { saveOriginalPhoto } from "@/lib/ronda/db";
 import { uploadFoto, rondaFotoUrl } from "@/lib/ronda/api-client";
 import { getFotoSugestao } from "@/lib/ronda/api-client";
+import {
+  newPhotoId,
+  logCompressionStarted,
+  logCompressionCompleted,
+  logUploadRequested,
+  logUploadCompleted,
+  logUploadFailed,
+  logSuggestionRequested,
+  logSuggestionAnswered,
+  logSuggestionFailed,
+} from "@/lib/ronda/diagnostics";
 
 /**
  * Cores exatas do protótipo real do relatório final (não aproximadas para
@@ -134,9 +145,22 @@ export function FindingCard({
       // antes de `uploadFoto` sequer ser chamado — sem erro na tela, sem
       // falha de rede, sem nada em log de servidor (achado de campo,
       // 17/08/2026: "a foto não sobe, sai do app").
+      //
+      // `photoId` é gerado, e o evento "started" gravado (com `await`, não
+      // `void`) antes de chamar `compressPhoto` — é essa gravação, já
+      // confirmada em disco, que sobrevive à aba sendo descartada no meio da
+      // própria compressão. Só depois disso o risco começa.
       const compressed: CompressedPhoto[] = [];
+      const photoIds: string[] = [];
       for (const file of fileList) {
-        compressed.push(await compressPhoto(file));
+        const photoId = newPhotoId();
+        photoIds.push(photoId);
+        const inputDims = await readImageDimensions(file);
+        await logCompressionStarted(photoId, file.size, inputDims);
+        const startedAt = Date.now();
+        const result = await compressPhoto(file);
+        await logCompressionCompleted(photoId, result.blob.size, result.width, result.height, Date.now() - startedAt);
+        compressed.push(result);
       }
 
       const novosIds: string[] = [];
@@ -146,10 +170,14 @@ export function FindingCard({
       // Sequencial: em rede de campo, N uploads simultâneos de vários MB
       // pioram o tempo total e a chance de sucesso.
       for (const [i, foto] of compressed.entries()) {
+        const photoId = photoIds[i];
+        await logUploadRequested(photoId, foto.blob.size);
         try {
           const { fotoId } = await uploadFoto(foto.blob, fileList[i], finding.id);
           novosIds.push(fotoId);
-        } catch {
+          await logUploadCompleted(photoId);
+        } catch (error) {
+          await logUploadFailed(photoId, error instanceof Error ? error.message : "Falha desconhecida no upload.");
           aindaLocais.push(await photoToBase64(foto));
           originaisParaGuardar.push(fileList[i]);
         }
@@ -167,9 +195,20 @@ export function FindingCard({
       await Promise.all(originaisParaGuardar.map((file, i) => saveOriginalPhoto(finding.id, startIndex + i, file)));
 
       // Sugestão por foto (Fase 4) precisa de base64; derivada só aqui, e
-      // sem bloquear — sugestão que falha não é erro de foto.
+      // sem bloquear — sugestão que falha não é erro de foto. "answered" é
+      // gravado mesmo quando `applyPhotoSuggestion` não tem nada a aplicar
+      // (sugestão vazia) — é isso que distingue "o modelo não tinha nada a
+      // dizer" (fim normal) de "o app morreu no meio" (sem fim nenhum).
       void photoToBase64(compressed[0])
-        .then((photo) => applyPhotoSuggestion(photo))
+        .then(async (photo) => {
+          await logSuggestionRequested(finding.id);
+          try {
+            await applyPhotoSuggestion(photo);
+            await logSuggestionAnswered(finding.id);
+          } catch (error) {
+            await logSuggestionFailed(finding.id, error instanceof Error ? error.message : "Falha desconhecida na sugestão.");
+          }
+        })
         .catch(() => undefined);
     } catch (error) {
       setPhotoError(error instanceof Error ? error.message : "Falha ao processar a foto.");
