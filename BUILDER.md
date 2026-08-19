@@ -2011,3 +2011,118 @@ anterior" em "Ver rondas anteriores", ou consulta direta ao store
 `diagnostics`) vai mostrar uma compressão iniciada sem concluída — dado, não
 suposição, ao contrário do que essa mesma investigação tinha antes desta
 instrumentação existir.
+
+## 2026-08-19 — Tirar o roxo do site: inversão de hierarquia de superfície em `/v2`, portão de matiz em teste (`#36`)
+
+Executei `GENESIS/pacotes/2026-08-19-tirar-o-roxo.md` (`Luna-context.md`),
+que aplica o Padrão SMX de Cores (`GENESIS/padroes/PADRAO-SMX-CORES.md`,
+`ADR-024`) a `/v2` e `/forge?layout=v2`. Midnight (`#1E2761`, matiz 232°)
+cobria a página inteira em `/v2` e lia como roxo — 17° fora do azul da
+logo SMX (215°).
+
+### O que fiz
+
+**Etapa 1 — caça ao roxo declarado.** Grep por `#7C3AED`/`#A78BFA`/
+`#8B5CF6`/`#6D3FD1`/`#9333EA`/`violet`/`purple` em todo o repositório,
+depois restrito ao escopo (`app/globals.css`, `tailwind.config.ts`,
+`components/site/**`, `components/forge/*-v2*`): nenhum hex de roxo,
+gradiente ou sombra violeta ali. `luna.violet`/`violetMid`/`violetGlow`
+em `tailwind.config.ts` — comentei como token legado do Modo Usuário v1,
+**não removi**: `hero.tsx` e `cognitive-session-modal.tsx` (v1, fora de
+escopo) ainda usam `bg-luna-violet`/`shadow-aura`. Procurei coloração de
+sintaxe customizada no Forge v2 (o pacote citava `--t-key` ou
+equivalente) — não existe: o editor reusado de v1 usa o tema `vs-dark`
+nativo do Monaco (`theme="vs-dark"` em `editor.tsx`), sem tema próprio.
+Nada a trocar aí.
+
+**Achado fora do previsto, reportado em vez de tocado:** o seletor
+global `body { background-image: radial-gradient(...) }` em
+`app/globals.css` (linha ~149) tem três stops com roxo
+(`rgba(124,58,237,...)`, `rgba(167,139,250,...)`) — a atmosfera do Modo
+Usuário v1. `.luna-v2` só é aplicado a um `<div id="luna-site-theme-root">`
+wrapper (`site-theme-provider.tsx`), nunca ao `<body>`, então em teoria
+esse gradiente ainda pinta atrás de `/v2`. Na prática o wrapper cobre a
+página inteira com `background-color: var(--luna-bg)` opaco — confirmei
+por captura de tela (ver Verificação) que não aparece roxo nenhum em
+`/v2`. Não toquei essa regra: ela é compartilhada com `/`, que o próprio
+pacote exige não mudar, e o pacote pedia para eu reportar antes de trocar
+algo fora do previsto — é o que fiz.
+
+**Etapa 2 — inversão de hierarquia.** Bloco aditivo no fim de
+`app/globals.css`, valor anterior comentado em cada linha: `--luna-bg` →
+`#000206`; degradê do herói invertido (Midnight no topo, `#000206` no
+fim — antes era o oposto); superfície e linhas passam a derivar de
+Midnight/`glow-3` em opacidade, nunca mais branco; texto `#DCE6F2`;
+acento `#A0B8C8` (era `#22D3EE`, matiz 188°, também fora da família). Só
+o tema escuro — o pacote não pediu mudança no claro nesta etapa, e o
+fundo `--luna-paper` já não tem matiz relevante. Midnight não sai do
+sistema: continua no `themeColor` do PWA (`app/ronda/layout.tsx`) e no
+texto sobre âmbar (`finding-card.tsx`) — nenhum dos dois tocado.
+
+**Etapa 3 — rampa no Tailwind.** `luna.void/str1-4/glow1-5/spec/warm3-5`
+acrescentados a `tailwind.config.ts`, só os treze valores que o pacote
+listou (não a rampa completa do padrão de cores, que tem mais) — nenhuma
+chave existente removida.
+
+**Etapa 4 — portão de matiz.** `scripts/hue-gate.mjs`: `hexHue` (RGB→HSL
+padrão), `passesHueGate` (exceção declarada ou matiz em [200,220] ou
+[17,55]) e `findHueGateViolations`, extraídos para testabilidade no
+mesmo padrão de `constitution-rules.mjs`. Exceções: as seis do pacote
+(`#2E7D32`/`#E8A33D`/`#C62828`/`#1E2761`/`#FFFFFF`/`#000206`) mais os
+treze valores da rampa nova — testá-los contra o próprio portão que os
+originou seria circular. `scripts/hue-gate.d.mts` — precisei, porque
+`tsconfig.json` tem `allowJs: false` e `strict: true`; sem a declaração,
+`tsc` reprova com `TS7016` (`any` implícito), exatamente o mesmo motivo
+pelo qual `constitution-rules.d.mts` já existia para o módulo irmão.
+`scripts/__tests__/hue-gate.test.ts`: um caso positivo por faixa, um
+negativo com `#A78BFA` (o roxo real que motivou a regra — computa
+~255°, não os 275° citados na medição original do padrão de cores;
+diferença de arredondamento do documento-fonte, não do meu cálculo —
+conferido à mão, RGB→HSL padrão), mais os casos de exceção declarada
+(verde/vermelho de classificação, Midnight) e o caso de matiz
+indefinido (cinza puro) não escapando por acidente.
+`scripts/constitution-check.mjs` passa a escanear `components/site/**` e
+os arquivos `*-v2` do Forge (filtro por nome de arquivo contendo `-v2`)
+contra o portão.
+
+### O que NÃO fiz, por decisão consciente
+
+- Não toquei `app/ronda/`, `components/ronda/`, `lib/ronda/` — confirmado
+  no diff (`git diff --stat`) e por captura de tela de `/ronda` mostrando
+  Midnight inalterado.
+- Não migrei as cores do `/ronda` — pacote próprio
+  (`2026-08-19-safety-walk-cores.md`), que depende de um gate urgente que
+  não vi neste repositório ainda.
+- Não troquei `/` por `/v2`, nem mexi em tipografia (Archivo continua) —
+  fora do escopo desta etapa, como o próprio pacote registra.
+- Não toquei o `body{}` global com o gradiente violeta do v1 (ver achado
+  acima).
+
+### Verificação
+
+`pnpm typecheck` (precisou de `hue-gate.d.mts`), `pnpm test` — **102/102**
+(94 antes + 8 novos, nenhum existente alterado), `pnpm run
+test:constitution` (7 arquivos escaneados contra o portão novo — 6 de
+`components/site/`, 1 de `components/forge` com `-v2` no nome), `pnpm
+build` — todos verdes. Os dois avisos de Edge Runtime no build (`jose`
+via `next-auth`, em `auth.ts`) são pré-existentes, não relacionados a
+este PR — confirmados presentes antes das minhas mudanças também.
+
+Visual, com Playwright contra o dev server real (`pnpm run dev`, não só
+build): `/v2` escuro (fundo quase preto, sem roxo, cartões em Midnight
+translúcido, acento azul-acinzentado), `/v2` claro (idêntico ao anterior
+— não deveria mudar, e não mudou) e `/ronda` (Midnight `#1E2761`
+inalterado — a trava que confirma que a religação de tokens não vazou de
+escopo).
+
+**Portão real** (produção, celular, os dois temas, item 4 do pacote —
+"abrir `/ronda` no celular e confirmar que nada mudou") fica para o
+Architect. Não verificado nesta sessão — reportado como tal, não como
+feito.
+
+Next action: Architect revisar e mergear o `#36`; depois, seguir a fila
+em `GENESIS/pacotes/README.md` (`Luna-context.md`) — o próximo item
+(gate com link ao campo, Pacote B) depende de um gate urgente de ronda
+divergente que este pacote menciona mas que não encontrei neste
+repositório ainda, precisa de confirmação do Architect antes de
+prosseguir.
