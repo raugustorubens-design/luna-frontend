@@ -24,6 +24,7 @@ const STATUS_CLASS: Record<string, string> = {
   synced: "border-emerald-500/40 text-emerald-700 dark:text-emerald-300",
   error: "border-red-500/40 text-red-700 dark:text-red-300",
   invalid: "border-orange-500/40 text-orange-700 dark:text-orange-300",
+  unauthenticated: "border-sky-500/40 text-sky-700 dark:text-sky-300",
 };
 
 function StatusTag({ entry }: { entry: RondaListEntry }) {

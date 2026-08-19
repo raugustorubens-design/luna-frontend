@@ -93,8 +93,20 @@ const DIAGNOSTICS_STORE = "diagnostics";
  * e descartar o item (achado real: itens antigos, de antes da migração pra
  * achado dinâmico, presos na fila local e reenviados pra sempre contra o
  * schema atual — ver BUILDER.md).
+ *
+ * "unauthenticated" (distinto dos dois): o envio falhou com 401 — sessão
+ * expirada, não dado errado nem rede fora do ar. `2026-08-19-acesso-
+ * publico.md`, Etapa 3, armadilha (b) — o pior caso é o aparelho voltar
+ * online sem sessão válida no meio de uma ronda em campo; reenviar o mesmo
+ * payload sem sessão vai falhar de novo do mesmo jeito, então
+ * `trySyncPendingRondas` também não insiste sozinho aqui (mesmo raciocínio
+ * de "invalid": retry cego contra uma causa que retry não resolve). O que
+ * resolve é a pessoa logar de novo — a partir daí o item volta pra
+ * "pending" sozinho (`reclaimUnauthenticated` em `queue.ts`), sem precisar
+ * virar "invalid" nem exigir descartar/refazer a ronda: o achado está
+ * certo, só faltava sessão.
  */
-export type QueueStatus = "pending" | "syncing" | "synced" | "error" | "invalid";
+export type QueueStatus = "pending" | "syncing" | "synced" | "error" | "invalid" | "unauthenticated";
 
 export interface QueueItem {
   localId: string;
@@ -261,6 +273,7 @@ export interface QueueCounts {
   synced: number;
   error: number;
   invalid: number;
+  unauthenticated: number;
 }
 
 export function summarizeQueue(items: QueueItem[]): QueueCounts {
@@ -270,6 +283,7 @@ export function summarizeQueue(items: QueueItem[]): QueueCounts {
     synced: items.filter((i) => i.status === "synced").length,
     error: items.filter((i) => i.status === "error").length,
     invalid: items.filter((i) => i.status === "invalid").length,
+    unauthenticated: items.filter((i) => i.status === "unauthenticated").length,
   };
 }
 

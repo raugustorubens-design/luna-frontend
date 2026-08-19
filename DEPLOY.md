@@ -22,6 +22,7 @@ terminal do Forge funcionar dentro de um único serviço Railway.
    | `AUTH_SECRET` | Um segredo gerado (`npx auth secret` ou `openssl rand -base64 33`) | Sim — o Auth.js recusa subir em produção sem isso |
    | `AUTH_URL` | URL pública deste serviço, ex.: `https://luna-frontend-production-ffcc.up.railway.app` | Sim — também é o que diz ao Auth.js para confiar no host do Railway (só confia automaticamente em domínios `*.vercel.app`) |
    | `FORGE_ALLOWED_EMAIL` | O único e-mail Google autorizado a entrar no `/forge` | Sim — **nunca** `NEXT_PUBLIC_*`. Sem essa variável, todo login é rejeitado (allowlist vazia nunca autoriza ninguém) |
+   | `RONDA_ALLOWED_EMAILS` | E-mails Google autorizados a entrar no `/ronda` (Safety Walk) — lista separada por vírgula, ex.: `tecnico1@empresa.com,tecnico2@empresa.com` | Sim — **nunca** `NEXT_PUBLIC_*`. Allowlist própria, separada de `FORGE_ALLOWED_EMAIL` — quem faz ronda não entra no Forge, e vice-versa |
    | `FORGE_TERMINAL_TOKEN` | Um segredo gerado por você (ex.: `openssl rand -hex 32`) | Sim, para o terminal funcionar — sem essa variável, o servidor rejeita toda conexão em `/forge/terminal` (nenhum shell é criado), mesmo com login Google válido. Ver "Segurança do terminal" abaixo |
    | `NEXT_PUBLIC_FORGE_TERMINAL_TOKEN` | **O mesmo valor** de `FORGE_TERMINAL_TOKEN` | Sim, junto com a anterior — é como o browser envia o token na conexão WebSocket |
    | `FORGE_WORKING_DIRECTORY` | Diretório de trabalho do terminal/git-status locais do Forge | Não — default é o próprio diretório do deploy (`process.cwd()`), que já é o correto |
@@ -31,11 +32,18 @@ terminal do Forge funcionar dentro de um único serviço Railway.
 
 ## O que validar após o deploy
 
-- `/` abre (User Mode) sem exigir login — continua público.
+- `/` e `/v2` abrem (User Mode) sem exigir login, e sem o link flutuante
+  "Dev Mode →" — ele só aparece com sessão ativa (Etapa 1 de
+  `2026-08-19-acesso-publico.md`).
 - `/forge` sem sessão redireciona para `/api/auth/signin` (não abre a UI).
+- `/ronda` sem sessão também redireciona para `/api/auth/signin`.
 - Login com a conta em `FORGE_ALLOWED_EMAIL` funciona e leva de volta ao
   `/forge` pedido (`callbackUrl`).
-- Login com qualquer outra conta Google é rejeitado (`AccessDenied`) — não
+- Login com uma conta em `RONDA_ALLOWED_EMAILS` funciona e leva de volta ao
+  `/ronda` pedido — mas **não** abre `/forge` (redireciona para
+  `/acesso-negado`, não para um novo login).
+- Login com qualquer outra conta Google é rejeitado — cai em
+  `/acesso-negado` (página própria, sem o `?error=` técnico na tela), não
   cria sessão.
 - `/forge` abre (Dev Mode) sem erro 500 no console do navegador, já logado.
 - Explorer lista arquivos (via Gateway `filesystem.list` — depende do backend
@@ -73,19 +81,54 @@ muda em nada — continua público.
 5. Copiar o Client ID/Secret gerados para `AUTH_GOOGLE_ID`/`AUTH_GOOGLE_SECRET`
    no Railway (tabela acima).
 
-### Como a allowlist de um único e-mail é aplicada
+### Como as duas allowlists são aplicadas
 
-`FORGE_ALLOWED_EMAIL` é verificada no callback `signIn` do Auth.js
-(`auth.ts`) — um login com uma conta Google válida mas fora da allowlist é
-**rejeitado de verdade** (nenhuma sessão/cookie é criada; Auth.js redireciona
-para sua página de erro padrão, `AccessDenied`), não apenas "escondido" na
-UI. A sessão em si vive num cookie `httpOnly` gerenciado pelo Auth.js — nunca
-`localStorage`.
+`2026-08-19-acesso-publico.md`, Etapa 3 — duas áreas restritas, cada uma
+com sua própria allowlist (`FORGE_ALLOWED_EMAIL`, uma conta só; e
+`RONDA_ALLOWED_EMAILS`, lista separada por vírgula), verificadas em dois
+pontos diferentes que respondem perguntas diferentes:
 
-O middleware (`middleware.ts`) cobre `/forge/:path*` e `/api/forge/:path*`.
+- **`signIn` do Auth.js (`auth.ts`)** decide **se a pessoa consegue logar**
+  — estar em qualquer uma das duas listas basta. Uma conta Google fora das
+  duas é **rejeitada de verdade** (nenhuma sessão/cookie é criada; Auth.js
+  redireciona para `/acesso-negado`, `pages.error`), não apenas "escondida"
+  na UI. A sessão em si vive num cookie `httpOnly` gerenciado pelo Auth.js —
+  nunca `localStorage`.
+- **`middleware.ts`** decide **o que a sessão já aberta alcança**, rota por
+  rota: `/forge` e `/api/forge/*` exigem o e-mail em `FORGE_ALLOWED_EMAIL`
+  especificamente; `/ronda` exige o e-mail em `RONDA_ALLOWED_EMAILS`
+  especificamente. Uma sessão válida só pra uma área que tenta abrir a
+  outra cai em `/acesso-negado` (não num novo login — reautenticar em
+  silêncio com a mesma conta Google só reproduziria o mesmo bloqueio, um
+  loop). As listas não se misturam: quem faz ronda não entra no Forge, e
+  vice-versa.
+
 Em desenvolvimento local (`NODE_ENV !== "production"`) o gate é dispensado,
 na mesma linha do próprio terminal — ambiente confiável, só o operador tem
 acesso à porta.
+
+### Sessão longa para uso de campo (/ronda)
+
+O técnico faz a ronda longe de sinal, às vezes por horas — a sessão não pode
+caducar no meio disso. `auth.ts` declara `session.maxAge = 30 dias`
+explicitamente (mesmo sendo hoje também o default do Auth.js — decisão
+deste pacote, não um acidente de versão da lib), renovada a cada uso
+(`updateAge` no default).
+
+**Mesmo assim, sessão expirada em campo é o pior caso e vai acontecer.**
+`lib/ronda/queue.ts` reconhece um 401 do envio e marca o item como
+`"unauthenticated"` (não `"error"`, que reenviaria pra sempre contra a
+mesma causa; não `"invalid"`, que exigiria refazer a ronda) — a barra de
+status (`QueueStatusBar`) mostra um aviso claro e um botão "Entrar"; ao
+logar de novo, o item volta sozinho pra `"pending"` e o envio continua.
+
+**Não testado neste PR, e precisa ser antes de mergear** — retorno do login
+Google dentro do PWA instalado (não só na aba do navegador): o fluxo abre o
+Google e volta por navegação de página inteira (`next-auth/react`'s
+`signIn()`, sem popup), que é o caminho mais seguro para um PWA `display:
+standalone`, mas só um teste no aparelho real confirma que o retorno de
+fato acontece. Se não funcionar, há mais de um caminho alternativo e a
+escolha é do Arquiteto.
 
 ### Terminal: dois controles, não um
 
