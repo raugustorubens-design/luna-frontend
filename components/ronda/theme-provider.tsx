@@ -63,17 +63,26 @@ export function RondaThemeProvider({ children }: { children: React.ReactNode }) 
         {/* eslint-disable-next-line @next/next/no-sync-scripts */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         {/*
-          Fundo escuro em degradê vertical, quase preto (#05060B) no topo até
-          o Midnight (#1E2761) embaixo. Três decisões por trás disto:
+          Pacote "Safety Walk para o Padrão de Cores"
+          (GENESIS/pacotes/2026-08-19-safety-walk-cores.md, Luna-context.md,
+          ADR-024), Etapa 1, 19/08/2026 — inversão de hierarquia de
+          superfície, mesma migração já feita em `/v2` (ADR-024 emenda o
+          ADR-022): a página passa a partir de `#000206` (quase preto,
+          "vazio" do Padrão SMX de Cores), e o Midnight deixa de cobrir a
+          tela inteira — vira a cor que emerge dela, no topo do degradê.
+
+          Fundo escuro em degradê vertical, Midnight (#1E2761) no topo até
+          quase preto (#000206) embaixo. Mesmas três decisões de antes,
+          valores invertidos:
 
           - **Vertical, escuro no topo:** o cabeçalho (título, alternador de
             tema, botão de voltar) e os selos de estado vivem no topo — a
             faixa mais escura fica exatamente onde a densidade de texto é
             maior. No iOS a barra de status é `black-translucent` (ver
-            `app/ronda/layout.tsx`), ou seja, ela se sobrepõe ao topo da
-            página: quase preto ali é o que deixa os ícones do sistema
-            legíveis.
-          - **`#05060B`, não `#000000`:** mantém o mesmo viés azul de
+            `app/ronda/layout.tsx`): `#000206` no topo é o que deixa os
+            ícones do sistema legíveis, melhor do que o `#05060B` de antes
+            (mais próximo do preto que a barra de status realmente compõe).
+          - **`#000206`, não `#000000`:** mantém o mesmo viés azul de
             `#1E2761`, então a interpolação fica dentro de uma família de
             matiz só — um quase preto neutro passaria por um meio-tom
             acinzentado no caminho até o Midnight.
@@ -85,14 +94,21 @@ export function RondaThemeProvider({ children }: { children: React.ReactNode }) 
             (que é justamente o que costuma falhar no Safari do iOS, o
             alvo principal deste PWA).
 
-          `dark:bg-[#1E2761]` continua abaixo do degradê como cor sólida de
+          `dark:bg-[#000206]` continua abaixo do degradê como cor sólida de
           fallback (`background-color` e `background-image` são propriedades
           distintas, as duas se aplicam) — se o degradê não pintar, o fundo
-          cai no Midnight de antes, nunca no fundo claro.
+          cai no quase preto, nunca no fundo claro.
+
+          Texto escuro `#DCE6F2` (era `#F4F6FB`): sobre um fundo quase
+          preto, branco quase puro cintila — mesma correção já feita em
+          `/v2`. Tema claro não muda nesta etapa: fundo `#F4F6FB` e texto
+          `#0A1B3D` (era `#1E2761` — o Midnight em si nunca foi pensado
+          como cor de texto corrido; `#0A1B3D` é o valor que o Padrão SMX
+          de Cores define para isso, 15,7:1 de contraste sobre o papel).
         */}
         <div
           id="ronda-root"
-          className="min-h-dvh bg-[#F4F6FB] text-[#1E2761] [color-scheme:light] dark:bg-[#1E2761] dark:bg-[linear-gradient(180deg,#05060B_0%,#1E2761_100%)] dark:text-[#F4F6FB] dark:[color-scheme:dark]"
+          className="min-h-dvh bg-[#F4F6FB] text-[#0A1B3D] [color-scheme:light] dark:bg-[#000206] dark:bg-[linear-gradient(180deg,#1E2761_0%,#000206_100%)] dark:text-[#DCE6F2] dark:[color-scheme:dark]"
         >
           {children}
         </div>

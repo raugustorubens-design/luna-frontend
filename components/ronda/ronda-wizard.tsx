@@ -56,33 +56,33 @@ function FlagSection({
   onAddManual: () => void;
 }) {
   return (
-    <div className="rounded-lg border border-black/10 p-3 dark:border-white/10">
-      <label className="flex items-center gap-2 text-sm text-slate-900 dark:text-slate-100">
+    <div className="rounded-lg border border-black/10 p-3 dark:border-[rgba(112,136,160,0.16)]">
+      <label className="flex items-center gap-2 text-sm text-[#0A1B3D] dark:text-[#DCE6F2]">
         <input type="checkbox" checked={checked} onChange={onToggle} className="[color-scheme:light] dark:[color-scheme:dark]" />
         {FLAG_LABELS[flag.nome] ?? flag.nome}
       </label>
 
       {checked && (
         <div className="mt-2 flex flex-col gap-1.5 pl-6">
-          {suggestions === "loading" && <p className="text-xs text-slate-500 dark:text-slate-400">Carregando sugestões…</p>}
+          {suggestions === "loading" && <p className="text-xs text-[#6B7C99] dark:text-[#5A6E8A]">Carregando sugestões…</p>}
           {Array.isArray(suggestions) &&
             suggestions.map((suggestion) => (
               <button
                 key={suggestion.controleRiscoId}
                 type="button"
                 onClick={() => onAddFromSuggestion(suggestion)}
-                className="rounded border border-dashed border-black/20 px-2 py-1.5 text-left text-xs text-slate-700 hover:border-cyan-500 hover:text-cyan-700 dark:border-white/20 dark:text-slate-300 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
+                className="rounded border border-dashed border-black/20 px-2 py-1.5 text-left text-xs text-[#41557A] hover:border-[#003C90] hover:text-[#003C90] dark:border-[rgba(112,136,160,0.28)] dark:text-[#7E92AE] dark:hover:border-[#A0B8C8] dark:hover:text-[#A0B8C8]"
               >
                 + {suggestion.descricao}
               </button>
             ))}
           {Array.isArray(suggestions) && suggestions.length === 0 && (
-            <p className="text-xs text-slate-500 dark:text-slate-400">Sem sugestão cadastrada — adicione manualmente.</p>
+            <p className="text-xs text-[#6B7C99] dark:text-[#5A6E8A]">Sem sugestão cadastrada — adicione manualmente.</p>
           )}
           <button
             type="button"
             onClick={onAddManual}
-            className="rounded border border-black/15 px-2 py-1.5 text-left text-xs text-slate-600 hover:border-cyan-500 hover:text-cyan-600 dark:border-white/15 dark:text-slate-400 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
+            className="rounded border border-black/15 px-2 py-1.5 text-left text-xs text-[#6B7C99] hover:border-[#003C90] hover:text-[#003C90] dark:border-[rgba(112,136,160,0.28)] dark:text-[#5A6E8A] dark:hover:border-[#A0B8C8] dark:hover:text-[#A0B8C8]"
           >
             + Adicionar achado manualmente para este flag
           </button>
@@ -315,10 +315,10 @@ export function RondaWizard() {
           onDiscardInvalid={(localId) => void discardInvalid(localId)}
         />
 
-        <header className="flex items-start justify-between gap-2 border-b border-black/10 px-4 py-3 dark:border-white/10">
+        <header className="flex items-start justify-between gap-2 border-b border-black/10 px-4 py-3 dark:border-[rgba(112,136,160,0.16)]">
           <div>
-            <h1 className="text-base font-semibold text-slate-900 dark:text-slate-100">LUNA Safety Walk</h1>
-            <p className="text-xs text-slate-600 dark:text-slate-400">
+            <h1 className="text-base font-semibold text-[#0A1B3D] dark:text-[#DCE6F2]">LUNA Safety Walk</h1>
+            <p className="text-xs text-[#6B7C99] dark:text-[#5A6E8A]">
               {step === "A" && "Etapa 1 de 3 — Dados do LUNA Safety Walk"}
               {step === "B" && "Etapa 2 de 3 — Flags de risco e achados"}
               {step === "C" && "Etapa 3 de 3 — Encerramento"}
@@ -336,7 +336,7 @@ export function RondaWizard() {
           documento inteiro, levando cabeçalho e rodapé embora. */}
       <main className="ronda-scroll-pad min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
         {draftRecovered && step !== "done" && (
-          <div className="mb-3 flex items-start justify-between gap-3 rounded border border-cyan-500/40 bg-cyan-500/10 p-2.5 text-xs text-cyan-800 dark:text-cyan-300">
+          <div className="mb-3 flex items-start justify-between gap-3 rounded border border-[#003C90]/40 dark:border-[#A0B8C8]/40 bg-[#003C90]/10 dark:bg-[#A0B8C8]/10 p-2.5 text-xs text-[#003C90] dark:text-[#A0B8C8]">
             {/*
               Antes esta mensagem afirmava "nada do que você já tinha
               preenchido se perdeu" — e é exatamente quando uma foto se perde
@@ -364,55 +364,55 @@ export function RondaWizard() {
 
         {step === "A" && (
           <div className="flex flex-col gap-3">
-            <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
+            <label className="flex flex-col gap-1 text-xs text-[#6B7C99] dark:text-[#5A6E8A]">
               Título
               <input
                 type="text"
                 value={metadata.titulo}
                 onChange={(event) => setMetadata({ ...metadata, titulo: event.target.value })}
-                className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-slate-900 [color-scheme:light] dark:border-white/15 dark:text-slate-100 dark:[color-scheme:dark]"
+                className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-[#0A1B3D] [color-scheme:light] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2] dark:[color-scheme:dark]"
                 placeholder="ex. LUNA Safety Walk — Turno A"
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
+            <label className="flex flex-col gap-1 text-xs text-[#6B7C99] dark:text-[#5A6E8A]">
               Data
               <input
                 type="date"
                 value={metadata.data}
                 onChange={(event) => setMetadata({ ...metadata, data: event.target.value })}
-                className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-slate-900 [color-scheme:light] dark:border-white/15 dark:text-slate-100 dark:[color-scheme:dark]"
+                className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-[#0A1B3D] [color-scheme:light] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2] dark:[color-scheme:dark]"
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
+            <label className="flex flex-col gap-1 text-xs text-[#6B7C99] dark:text-[#5A6E8A]">
               Local / Planta
               <input
                 type="text"
                 value={metadata.local}
                 onChange={(event) => setMetadata({ ...metadata, local: event.target.value })}
-                className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-slate-900 [color-scheme:light] dark:border-white/15 dark:text-slate-100 dark:[color-scheme:dark]"
+                className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-[#0A1B3D] [color-scheme:light] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2] dark:[color-scheme:dark]"
                 placeholder="ex. Unidade Sylvamo/Mogi Guaçu"
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
+            <label className="flex flex-col gap-1 text-xs text-[#6B7C99] dark:text-[#5A6E8A]">
               Responsável
               <input
                 type="text"
                 value={metadata.responsavel}
                 onChange={(event) => setMetadata({ ...metadata, responsavel: event.target.value })}
-                className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-slate-900 [color-scheme:light] dark:border-white/15 dark:text-slate-100 dark:[color-scheme:dark]"
+                className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-[#0A1B3D] [color-scheme:light] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2] dark:[color-scheme:dark]"
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
+            <label className="flex flex-col gap-1 text-xs text-[#6B7C99] dark:text-[#5A6E8A]">
               Turno
               <input
                 type="text"
                 value={metadata.turno}
                 onChange={(event) => setMetadata({ ...metadata, turno: event.target.value })}
-                className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-slate-900 [color-scheme:light] dark:border-white/15 dark:text-slate-100 dark:[color-scheme:dark]"
+                className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-[#0A1B3D] [color-scheme:light] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2] dark:[color-scheme:dark]"
                 placeholder="ex. manhã, tarde, noite"
               />
             </label>
-            <Link href="/ronda/historico" className="mt-1 text-xs text-cyan-600 underline dark:text-cyan-400">
+            <Link href="/ronda/historico" className="mt-1 text-xs text-[#003C90] underline dark:text-[#A0B8C8]">
               Ver rondas anteriores
             </Link>
           </div>
@@ -421,7 +421,7 @@ export function RondaWizard() {
         {step === "B" && (
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
-              <h2 className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Flags</h2>
+              <h2 className="text-xs font-medium uppercase tracking-wide text-[#6B7C99] dark:text-[#5A6E8A]">Flags</h2>
               {flagsError && <p className="text-xs text-red-400">{flagsError}</p>}
               {flags.map((flag) => (
                 <FlagSection
@@ -441,15 +441,15 @@ export function RondaWizard() {
               <button
                 type="button"
                 onClick={() => addFinding(newFinding(null))}
-                className="self-start rounded border border-black/15 px-3 py-1.5 text-xs text-slate-700 hover:border-cyan-500 hover:text-cyan-600 dark:border-white/15 dark:text-slate-300 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
+                className="self-start rounded border border-black/15 px-3 py-1.5 text-xs text-[#41557A] hover:border-[#003C90] hover:text-[#003C90] dark:border-[rgba(112,136,160,0.28)] dark:text-[#7E92AE] dark:hover:border-[#A0B8C8] dark:hover:text-[#A0B8C8]"
               >
                 + Achado avulso (sem flag)
               </button>
             </div>
 
             {findings.length > 0 && (
-              <div className="flex flex-col gap-3 border-t border-black/10 pt-3 dark:border-white/10">
-                <h2 className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Achados ({findings.length})</h2>
+              <div className="flex flex-col gap-3 border-t border-black/10 pt-3 dark:border-[rgba(112,136,160,0.16)]">
+                <h2 className="text-xs font-medium uppercase tracking-wide text-[#6B7C99] dark:text-[#5A6E8A]">Achados ({findings.length})</h2>
                 {findings.map((finding) => (
                   <FindingCard
                     key={finding.id}
@@ -467,16 +467,16 @@ export function RondaWizard() {
 
         {step === "C" && (
           <div className="flex flex-col gap-3">
-            <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
+            <label className="flex flex-col gap-1 text-xs text-[#6B7C99] dark:text-[#5A6E8A]">
               Observações gerais (opcional)
               <textarea
                 value={closing.observacoesGerais ?? ""}
                 onChange={(event) => setClosing({ ...closing, observacoesGerais: event.target.value })}
                 rows={4}
-                className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-slate-900 dark:border-white/15 dark:text-slate-100"
+                className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-[#0A1B3D] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2]"
               />
             </label>
-            <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300">
+            <label className="flex items-center gap-2 text-xs text-[#41557A] dark:text-[#7E92AE]">
               <input
                 type="checkbox"
                 checked={closing.incluirGraficoResumo}
@@ -498,12 +498,12 @@ export function RondaWizard() {
         {step === "done" && (
           <div className="flex flex-col items-center gap-3 py-10 text-center">
             <div className="text-4xl">✓</div>
-            <p className="text-sm text-slate-800 dark:text-slate-200">
+            <p className="text-sm text-[#1E3A61] dark:text-[#A8BBD4]">
               {savedLocally ? "LUNA Safety Walk salvo neste dispositivo." : "LUNA Safety Walk registrado."}
               <br />
               {counts.pending > 0 ? "Enviando ao servidor assim que houver rede — acompanhe na barra acima." : "Já confirmado no servidor."}
             </p>
-            <button type="button" onClick={startNewRonda} className="mt-2 rounded bg-cyan-500 px-4 py-2 text-sm font-medium text-black">
+            <button type="button" onClick={startNewRonda} className="mt-2 rounded bg-[#003C90] dark:bg-[#A0B8C8] px-4 py-2 text-sm font-medium text-white dark:text-[#000206]">
               Novo LUNA Safety Walk
             </button>
           </div>
@@ -511,12 +511,12 @@ export function RondaWizard() {
       </main>
 
       {step !== "done" && (
-        <footer className="ronda-chrome-bottom flex shrink-0 items-center justify-between gap-2 border-t border-black/10 px-4 py-3 dark:border-white/10">
+        <footer className="ronda-chrome-bottom flex shrink-0 items-center justify-between gap-2 border-t border-black/10 px-4 py-3 dark:border-[rgba(112,136,160,0.16)]">
           <button
             type="button"
             disabled={step === "A"}
             onClick={() => setStep(step === "C" ? "B" : "A")}
-            className="rounded border border-black/15 px-4 py-2 text-sm text-slate-700 disabled:opacity-30 dark:border-white/15 dark:text-slate-300"
+            className="rounded border border-black/15 px-4 py-2 text-sm text-[#41557A] disabled:opacity-30 dark:border-[rgba(112,136,160,0.28)] dark:text-[#7E92AE]"
           >
             Voltar
           </button>
@@ -525,13 +525,13 @@ export function RondaWizard() {
               type="button"
               disabled={!metadataComplete(metadata)}
               onClick={() => setStep("B")}
-              className="rounded bg-cyan-500 px-4 py-2 text-sm font-medium text-black disabled:opacity-40"
+              className="rounded bg-[#003C90] dark:bg-[#A0B8C8] px-4 py-2 text-sm font-medium text-white dark:text-[#000206] disabled:opacity-40"
             >
               Avançar
             </button>
           )}
           {step === "B" && (
-            <button type="button" onClick={() => setStep("C")} className="rounded bg-cyan-500 px-4 py-2 text-sm font-medium text-black">
+            <button type="button" onClick={() => setStep("C")} className="rounded bg-[#003C90] dark:bg-[#A0B8C8] px-4 py-2 text-sm font-medium text-white dark:text-[#000206]">
               Avançar
             </button>
           )}

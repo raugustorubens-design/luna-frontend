@@ -25,9 +25,15 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  // "Midnight", mesma cor de fundo escuro padrão do tema (ver theme-provider.tsx)
-  // — cor da UI do navegador/SO, não muda com a alternância claro/escuro em si.
-  themeColor: "#1E2761",
+  // Pacote "Safety Walk para o Padrão de Cores" (19/08/2026, ADR-024) —
+  // era "#1E2761" (Midnight), o fim do degradê antigo. `#000206` é o topo
+  // do degradê de agora (ver theme-provider.tsx) e o que a barra de
+  // status translúcida do iOS (`statusBarStyle: "black-translucent"`,
+  // abaixo) na prática se sobrepõe — corrige uma incoerência que já
+  // existia: o valor antigo apontava pro fim do degradê, não pro começo,
+  // onde a barra do sistema realmente fica. Cor da UI do navegador/SO, não
+  // muda com a alternância claro/escuro em si.
+  themeColor: "#000206",
   width: "device-width",
   initialScale: 1,
   // `maximumScale: 1` foi removido (achado de campo, 16/08/2026). Ele não

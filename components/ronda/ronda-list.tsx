@@ -20,7 +20,7 @@ import { useRondaQueue } from "@/lib/ronda/use-ronda-queue";
 const STATUS_CLASS: Record<string, string> = {
   server: "border-emerald-500/40 text-emerald-700 dark:text-emerald-300",
   pending: "border-amber-500/40 text-amber-700 dark:text-amber-300",
-  syncing: "border-cyan-500/40 text-cyan-700 dark:text-cyan-300",
+  syncing: "border-[#003C90]/40 dark:border-[#A0B8C8]/40 text-[#003C90] dark:text-[#A0B8C8]",
   synced: "border-emerald-500/40 text-emerald-700 dark:text-emerald-300",
   error: "border-red-500/40 text-red-700 dark:text-red-300",
   invalid: "border-orange-500/40 text-orange-700 dark:text-orange-300",
@@ -81,9 +81,9 @@ export function RondaList() {
 
   return (
     <div className="ronda-shell flex flex-col overflow-hidden">
-      <header className="ronda-chrome-top shrink-0 border-b border-black/10 px-4 py-3 dark:border-white/10">
-        <h1 className="text-base font-semibold text-slate-900 dark:text-slate-100">LUNA Safety Walk — rondas</h1>
-        <p className="text-xs text-slate-600 dark:text-slate-400">
+      <header className="ronda-chrome-top shrink-0 border-b border-black/10 px-4 py-3 dark:border-[rgba(112,136,160,0.16)]">
+        <h1 className="text-base font-semibold text-[#0A1B3D] dark:text-[#DCE6F2]">LUNA Safety Walk — rondas</h1>
+        <p className="text-xs text-[#6B7C99] dark:text-[#5A6E8A]">
           Toque numa ronda para editar achados ou a observação geral.
           {localCount > 0 && ` ${localCount} ainda ${localCount === 1 ? "está" : "estão"} neste aparelho.`}
         </p>
@@ -95,7 +95,7 @@ export function RondaList() {
           deixava rastro nenhum.
         */}
         {diagnosticsSummary && (
-          <p className="text-[10px] text-slate-500 dark:text-slate-500">
+          <p className="text-[10px] text-[#6B7C99] dark:text-[#5A6E8A]">
             Sessão anterior: {diagnosticsSummary.completed}/{diagnosticsSummary.started} compressões de foto concluídas
             {diagnosticsSummary.completed < diagnosticsSummary.started && " — alguma pode ter sido interrompida"}
           </p>
@@ -112,22 +112,22 @@ export function RondaList() {
           </div>
         )}
 
-        {loading && server === null && !serverError && <p className="text-sm text-slate-500 dark:text-slate-400">Carregando…</p>}
+        {loading && server === null && !serverError && <p className="text-sm text-[#6B7C99] dark:text-[#5A6E8A]">Carregando…</p>}
 
-        {!loading && entries.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400">Nenhuma ronda ainda.</p>}
+        {!loading && entries.length === 0 && <p className="text-sm text-[#6B7C99] dark:text-[#5A6E8A]">Nenhuma ronda ainda.</p>}
 
         <ul className="flex flex-col gap-2">
           {entries.map((entry) => (
             <li key={`${entry.kind}:${entry.id}`}>
               <Link
                 href={entry.kind === "server" ? `/ronda/historico/${entry.id}` : `/ronda/fila/${entry.id}`}
-                className="flex flex-col gap-1 rounded-lg border border-black/10 bg-black/[0.03] p-3 dark:border-white/10 dark:bg-white/[0.03]"
+                className="flex flex-col gap-1 rounded-lg border border-black/10 bg-black/[0.03] p-3 dark:border-[rgba(112,136,160,0.16)] dark:bg-[#001428]"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{entry.titulo || "(sem título)"}</span>
+                  <span className="text-sm font-medium text-[#0A1B3D] dark:text-[#DCE6F2]">{entry.titulo || "(sem título)"}</span>
                   <StatusTag entry={entry} />
                 </div>
-                <span className="text-xs text-slate-600 dark:text-slate-400">
+                <span className="text-xs text-[#6B7C99] dark:text-[#5A6E8A]">
                   {entry.data} — {entry.local} — {entry.achadosCount} achado{entry.achadosCount === 1 ? "" : "s"}
                 </span>
                 {entry.kind === "queue" && entry.lastError && <span className="text-xs text-red-500 dark:text-red-400">{entry.lastError}</span>}
@@ -137,8 +137,8 @@ export function RondaList() {
         </ul>
       </main>
 
-      <footer className="ronda-chrome-bottom flex shrink-0 items-center justify-between gap-2 border-t border-black/10 px-4 py-3 dark:border-white/10">
-        <Link href="/ronda" className="rounded border border-black/15 px-4 py-2 text-sm text-slate-700 dark:border-white/15 dark:text-slate-300">
+      <footer className="ronda-chrome-bottom flex shrink-0 items-center justify-between gap-2 border-t border-black/10 px-4 py-3 dark:border-[rgba(112,136,160,0.16)]">
+        <Link href="/ronda" className="rounded border border-black/15 px-4 py-2 text-sm text-[#41557A] dark:border-[rgba(112,136,160,0.28)] dark:text-[#7E92AE]">
           Nova ronda
         </Link>
         {counts.pending + counts.error + counts.syncing > 0 && (
@@ -147,7 +147,7 @@ export function RondaList() {
             onClick={() => {
               void syncNow().then(() => loadServer());
             }}
-            className="rounded bg-cyan-500 px-4 py-2 text-sm font-medium text-black"
+            className="rounded bg-[#003C90] dark:bg-[#A0B8C8] px-4 py-2 text-sm font-medium text-white dark:text-[#000206]"
           >
             Enviar pendentes
           </button>
