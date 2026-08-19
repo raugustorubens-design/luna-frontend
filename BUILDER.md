@@ -2256,3 +2256,114 @@ o roxo) já está mergeado e este `#37` fecha a segunda peça da fila em
 que depende deste merge e de confirmação de que a ronda do Sylvamo
 realmente subiu em campo (ação humana, já registrada como pendente desde
 o `#30`).
+
+## 2026-08-19 — Safety Walk para o Padrão de Cores: /ronda migra pra fundo #000206, linhas visíveis, acento azul-SMX (`#38`)
+
+Executei `GENESIS/pacotes/2026-08-19-safety-walk-cores.md`
+(`Luna-context.md`), Pacote C da fila — o mesmo Padrão SMX de Cores já
+aplicado a `/v2`/Forge v2 (`#36`), agora em `/ronda`. Confirmei antes de
+começar: o gate urgente (`#30`) e este próprio pacote de dependência
+(confirmação de que a ronda do Sylvamo subiu) estavam satisfeitos —
+consultei o Gateway de produção diretamente e vi duas rondas "Turno B,
+Sylvamo-LOGISTICA MG" criadas minutos depois do merge do `#30`, com 4
+achados cada. Não é prova de que o Architect abriu o aparelho e
+confirmou pessoalmente, mas é evidência forte de que a ronda presa
+subiu.
+
+### Por que este pacote exigiu mais interpretação que A e B
+
+Ao contrário dos dois anteriores, este veio com uma tabela abstrata
+(Fundo/Superfície/Linhas/Texto/Acento, "antes → depois") em vez de
+localizações exatas no código. Precisei mapear a tabela pro código real
+— `theme-provider.tsx`, e mais de 200 classes Tailwind espalhadas em 6
+componentes. Registro as decisões de mapeamento que não estavam
+explícitas no pacote:
+
+1. **Texto claro — 4 níveis, não 3.** O pacote lista só três valores
+   claros (`#0A1B3D`/`#1E3A61`/`#41557A`), mas o código real usa cinco
+   tons de `slate-*` (900/800/700/600/500) espelhando os quatro níveis
+   do lado escuro. Estendi com o quarto valor do Anexo B do próprio
+   `PADRAO-SMX-CORES.md` (`#6B7C99`), que o pacote não citou mas que já
+   está registrado no documento que ele aplica.
+2. **`white/20` (borda tracejada de sugestão) — não está na tabela**
+   (que só lista 10/15/25%). Mapeei pro nível `line-2` (`.28`, "borda de
+   controle") por ser um elemento interativo, e `white/30` (hover) pro
+   nível `line-3` (`.46`, "borda em foco") pelo mesmo motivo — hover é
+   sempre a ênfase mais forte disponível.
+3. **Acento — a tabela só dava o hex, não onde aplicar.** Identifiquei
+   todo uso de `cyan-*` do Tailwind em escopo (botões primários, links,
+   badge "enviando…", indicador de fila) como o alvo real: são
+   literalmente `#22D3EE`/`#06B6D4` (o hex que a tabela cita) expressos
+   como classes Tailwind, não como hex direto. Os quatro botões sólidos
+   (`bg-cyan-500 ... text-black`) precisaram de mais que trocar a cor de
+   fundo: `text-black` fixo ficaria ilegível sobre `#003C90` (navy,
+   precisa de texto branco) — troquei para `text-white dark:text-
+   [#000206]`, seguindo os valores `on-accent` que o próprio
+   `PADRAO-SMX-CORES.md` já define (branco no claro, quase-preto no
+   escuro).
+4. **`queue-status-bar.tsx` usa `bg-black/5` / `dark:bg-black/20` /
+   `dark:bg-black/30`** para a própria faixa (diferente do padrão
+   `bg-white/[0.03]` dos cards) — não está descrito na tabela (que fala
+   de branco translúcido, não preto mais escuro) e mudar sem
+   especificação arriscava uma regressão sem base clara. Deixei como
+   está, registrado aqui, não escondido.
+5. **`body{}` global de `/v2`** (achado da sessão anterior, `#36`) não é
+   relevante aqui — `/ronda` não compartilha esse seletor.
+
+### Ferramenta usada
+
+Como eram mais de 200 ocorrências mecânicas (o mesmo par `text-slate-900
+dark:text-slate-100`, por exemplo, repetido em oito lugares), escrevi um
+script Python de substituição por token exato (limites de espaço/aspas,
+não regex solta) para os padrões de mapeamento 1:1 confirmados, rodei,
+conferi a saída completa (216 substituições, uma linha de log por
+padrão) e apaguei o script — não fica no repositório. Os casos que não
+eram 1:1 (os quatro botões `text-black`, os dois tokens `cyan`
+completamente flat do `queue-status-bar.tsx`, o bloco de `theme-
+provider.tsx`/`theme-toggle.tsx`) fiz à mão, um por um.
+
+### Verificação
+
+`pnpm typecheck`, `pnpm run test:constitution`, `pnpm build` — verdes.
+`pnpm test` — **110/110**, o mesmo número de antes: é CSS puro, sem
+lógica testável, nenhum teste novo, nenhum existente alterado (regra do
+pacote).
+
+Depois de aplicar, conferi com `grep` que não sobrou `text-slate-*`,
+`cyan-*` nem `dark:border-white/*` em nenhum arquivo de `components/
+ronda/`/`app/ronda/` — zero ocorrências das três buscas. Confirmei
+também que `git status` não lista nenhum arquivo de `lib/ronda/` (só
+`app/ronda/layout.tsx`, seis componentes, e os dois arquivos em
+`public/`).
+
+Visual, via Playwright contra o dev server real (não só build):
+`/ronda` escuro — fundo quase preto confirmado, degradê visível, card de
+achado com borda e superfície distintas do fundo (a piora que o pacote
+media, bordas sumindo, não aparece — conferido numa tela real de Etapa
+B, achado avulso, com os campos obrigatórios em âmbar por cima do novo
+fundo). `/ronda` claro — inalterado no fundo, texto e botão no novo
+azul-SMX. `/v2` — capturado de novo depois desta mudança, idêntico ao
+que já estava, confirma que nada vazou de escopo.
+
+### O que NÃO fiz, por decisão consciente
+
+- Não verifiquei em produção, no celular onde o PWA está instalado, nos
+  dois temas, em luz de trabalho real — o próprio pacote é explícito que
+  isso é ação do Architect, fora do alcance desta sessão, e que a
+  preocupação real da migração é luz ambiente, não contraste em tela
+  calibrada.
+- Não fiz a Etapa 6 (emendar `PADRAO-SMX-CORES.md` em `Luna-context.md`
+  registrando esta migração e o resultado da validação de campo) — não
+  faz sentido documentar um resultado que ainda não existe. Fica
+  pendente até a verificação acima acontecer.
+- Não toquei `luna-core` nem o gerador de relatório.
+- Não resolvi o achado 4 acima (`bg-black/X` do `queue-status-bar.tsx`)
+  — registrado, não decidido sozinho.
+
+Next action: Architect revisar e mergear o `#38`, depois validar em
+campo (item pendente acima) e, só então, pedir a Etapa 6 (emenda do
+padrão) como pacote separado em `Luna-context.md`. Com isso, os três
+pacotes da fila original (`A`, `B`, `C`) estarão completos — falta só o
+que o `PLANO_o-resto.md` já tem por dentro (vetores faltantes, gerador
+de relatório, Constituição no prompt — todos em `luna-core`, fora deste
+repositório).
