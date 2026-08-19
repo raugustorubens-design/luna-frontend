@@ -169,28 +169,28 @@ function Editor({ source }: { source: EditorSource }) {
   }
 
   if (!metadata) {
-    return <p className="p-4 text-sm text-slate-500 dark:text-slate-400">Carregando…</p>;
+    return <p className="p-4 text-sm text-[#6B7C99] dark:text-[#5A6E8A]">Carregando…</p>;
   }
 
   return (
     <div className="ronda-shell flex flex-col overflow-hidden">
-      <header className="ronda-chrome-top shrink-0 border-b border-black/10 px-4 py-3 dark:border-white/10">
+      <header className="ronda-chrome-top shrink-0 border-b border-black/10 px-4 py-3 dark:border-[rgba(112,136,160,0.16)]">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h1 className="text-base font-semibold text-slate-900 dark:text-slate-100">Editar LUNA Safety Walk</h1>
-            <p className="text-xs text-slate-600 dark:text-slate-400">
+            <h1 className="text-base font-semibold text-[#0A1B3D] dark:text-[#DCE6F2]">Editar LUNA Safety Walk</h1>
+            <p className="text-xs text-[#6B7C99] dark:text-[#5A6E8A]">
               {metadata.titulo} — {metadata.local} — {metadata.data}
             </p>
           </div>
           <button
             type="button"
             onClick={() => router.push("/ronda/historico")}
-            className="shrink-0 rounded border border-black/15 px-3 py-1.5 text-xs text-slate-700 dark:border-white/15 dark:text-slate-300"
+            className="shrink-0 rounded border border-black/15 px-3 py-1.5 text-xs text-[#41557A] dark:border-[rgba(112,136,160,0.28)] dark:text-[#7E92AE]"
           >
             Voltar à lista
           </button>
         </div>
-        <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+        <p className="mt-1 text-[11px] text-[#6B7C99] dark:text-[#5A6E8A]">
           {isQueue ? `Ainda neste aparelho — ${ENTRY_STATUS_LABEL[queueStatus ?? "pending"]}` : ENTRY_STATUS_LABEL.server}
         </p>
       </header>
@@ -219,7 +219,7 @@ function Editor({ source }: { source: EditorSource }) {
             </div>
           )}
 
-          {findings.length === 0 && <p className="text-xs text-slate-500 dark:text-slate-400">Esta ronda não tem nenhum achado registrado.</p>}
+          {findings.length === 0 && <p className="text-xs text-[#6B7C99] dark:text-[#5A6E8A]">Esta ronda não tem nenhum achado registrado.</p>}
 
           {clientMissingFields.length > 0 && <MissingFieldsNotice missingFieldsList={clientMissingFields} />}
 
@@ -247,13 +247,13 @@ function Editor({ source }: { source: EditorSource }) {
             />
           ))}
 
-          <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
+          <label className="flex flex-col gap-1 text-xs text-[#6B7C99] dark:text-[#5A6E8A]">
             Observações gerais
             <textarea
               value={observacoesGerais}
               onChange={(event) => setObservacoesGerais(event.target.value)}
               rows={4}
-              className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-slate-900 dark:border-white/15 dark:text-slate-100"
+              className="rounded border border-black/15 bg-transparent px-2 py-2 text-sm text-[#0A1B3D] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2]"
             />
           </label>
 
@@ -277,7 +277,7 @@ function Editor({ source }: { source: EditorSource }) {
         </div>
       </main>
 
-      <footer className="ronda-chrome-bottom shrink-0 border-t border-black/10 px-4 py-3 dark:border-white/10">
+      <footer className="ronda-chrome-bottom shrink-0 border-t border-black/10 px-4 py-3 dark:border-[rgba(112,136,160,0.16)]">
         {/*
           `aria-disabled`, não `disabled`, quando falta campo — mesmo
           motivo do botão "Concluir" do wizard: em campo, o toque precisa

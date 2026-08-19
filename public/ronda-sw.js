@@ -18,7 +18,13 @@
  *     cache em segundo plano quando a rede responde.
  */
 
-const CACHE_NAME = "luna-ronda-shell-v1";
+// v2 — Pacote "Safety Walk para o Padrão de Cores" (19/08/2026, ADR-024).
+// Sem isto, quem já tem o PWA instalado não vê o CSS novo até o cache
+// expirar sozinho: a estratégia de assets é cache-first. O bump força a
+// troca; a limpeza de caches antigos no `activate` abaixo já existia antes
+// desta etapa e continua intacta — não é IndexedDB (queue/originalPhotos
+// vivem lá, nunca tocados por este arquivo) nem intercepta POST (linha 44).
+const CACHE_NAME = "luna-ronda-shell-v2";
 const PRECACHE_URLS = ["/ronda", "/ronda-manifest.json", "/ronda-icons/icon-192.png", "/ronda-icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {

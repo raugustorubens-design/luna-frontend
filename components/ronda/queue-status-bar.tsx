@@ -24,7 +24,7 @@ export function QueueStatusBar({
   const hasPending = counts.pending > 0 || counts.error > 0;
 
   return (
-    <div className="border-b border-black/10 bg-black/5 text-xs dark:border-white/10 dark:bg-black/30">
+    <div className="border-b border-black/10 bg-black/5 text-xs dark:border-[rgba(112,136,160,0.16)] dark:bg-black/30">
       <div className="flex items-center justify-between gap-2 px-4 py-2">
         <div className="flex flex-wrap items-center gap-3">
           <span className="flex items-center gap-1.5">
@@ -32,8 +32,8 @@ export function QueueStatusBar({
             {counts.pending} pendente{counts.pending === 1 ? "" : "s"}
           </span>
           {counts.syncing > 0 && (
-            <span className="flex items-center gap-1.5 text-cyan-300">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-cyan-400" />
+            <span className="flex items-center gap-1.5 text-[#003C90] dark:text-[#A0B8C8]">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-[#003C90] dark:bg-[#A0B8C8]" />
               {counts.syncing} enviando…
             </span>
           )}
@@ -58,7 +58,7 @@ export function QueueStatusBar({
           <button
             type="button"
             onClick={onSyncNow}
-            className="shrink-0 rounded border border-black/20 px-2 py-1 text-[11px] text-slate-800 hover:border-cyan-500 hover:text-cyan-600 dark:border-white/20 dark:text-slate-200 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
+            className="shrink-0 rounded border border-black/20 px-2 py-1 text-[11px] text-[#1E3A61] hover:border-[#003C90] hover:text-[#003C90] dark:border-[rgba(112,136,160,0.28)] dark:text-[#A8BBD4] dark:hover:border-[#A0B8C8] dark:hover:text-[#A0B8C8]"
           >
             Tentar enviar agora
           </button>

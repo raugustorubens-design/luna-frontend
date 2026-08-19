@@ -315,9 +315,9 @@ export function FindingCard({
   }
 
   return (
-    <div className="rounded-lg border border-black/10 bg-black/[0.03] p-3 dark:border-white/10 dark:bg-white/[0.03]">
+    <div className="rounded-lg border border-black/10 bg-black/[0.03] p-3 dark:border-[rgba(112,136,160,0.16)] dark:bg-[#001428]">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
+        <h3 className="text-sm font-semibold text-[#0A1B3D] dark:text-[#DCE6F2]">{title}</h3>
         <div className="flex items-center gap-2">
           {finding.estado === "nao_avaliado" && (
             <span className="rounded-full bg-amber-400/40 px-2 py-0.5 text-[10px] text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
@@ -328,7 +328,7 @@ export function FindingCard({
             <button
               type="button"
               onClick={() => onDuplicate(finding)}
-              className="rounded border border-black/15 px-2 py-1 text-[10px] text-slate-600 hover:border-cyan-500 hover:text-cyan-600 dark:border-white/15 dark:text-slate-400 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
+              className="rounded border border-black/15 px-2 py-1 text-[10px] text-[#6B7C99] hover:border-[#003C90] hover:text-[#003C90] dark:border-[rgba(112,136,160,0.28)] dark:text-[#5A6E8A] dark:hover:border-[#A0B8C8] dark:hover:text-[#A0B8C8]"
             >
               + Duplicar
             </button>
@@ -351,7 +351,7 @@ export function FindingCard({
                 }
               }}
               aria-label={`Remover achado — ${title}`}
-              className="rounded border border-black/15 px-2 py-1 text-[10px] leading-none text-slate-600 hover:border-red-500 hover:text-red-600 dark:border-white/15 dark:text-slate-400 dark:hover:border-red-400 dark:hover:text-red-300"
+              className="rounded border border-black/15 px-2 py-1 text-[10px] leading-none text-[#6B7C99] hover:border-red-500 hover:text-red-600 dark:border-[rgba(112,136,160,0.28)] dark:text-[#5A6E8A] dark:hover:border-red-400 dark:hover:text-red-300"
             >
               ×
             </button>
@@ -374,7 +374,7 @@ export function FindingCard({
                   : estado === "inexistente"
                     ? "border-emerald-400 bg-emerald-400/40 text-emerald-900 dark:bg-emerald-400/15 dark:text-emerald-300"
                     : "border-amber-400 bg-amber-400/40 text-amber-900 dark:bg-amber-400/15 dark:text-amber-300"
-                : "border-black/15 text-slate-600 hover:border-black/30 dark:border-white/15 dark:text-slate-400 dark:hover:border-white/30"
+                : "border-black/15 text-[#6B7C99] hover:border-black/30 dark:border-[rgba(112,136,160,0.28)] dark:text-[#5A6E8A] dark:hover:border-[rgba(112,136,160,0.46)]"
             }`}
           >
             {RISK_STATE_LABELS[estado]}
@@ -383,10 +383,10 @@ export function FindingCard({
       </div>
 
       {isIdentified && (
-        <div className="mt-3 flex flex-col gap-3 border-t border-black/10 pt-3 dark:border-white/10">
+        <div className="mt-3 flex flex-col gap-3 border-t border-black/10 pt-3 dark:border-[rgba(112,136,160,0.16)]">
           <label
             id={fieldDomId(finding.id, "departamento")}
-            className={`flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400 ${
+            className={`flex flex-col gap-1 text-xs text-[#6B7C99] dark:text-[#5A6E8A] ${
               isFieldPending("departamento") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
             }`}
           >
@@ -402,12 +402,12 @@ export function FindingCard({
               type="text"
               value={finding.departamento ?? ""}
               onChange={(event) => onChange({ ...finding, departamento: event.target.value })}
-              className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-sm text-slate-900 [color-scheme:light] dark:border-white/15 dark:text-slate-100 dark:[color-scheme:dark]"
+              className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-sm text-[#0A1B3D] [color-scheme:light] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2] dark:[color-scheme:dark]"
               placeholder="ex. Manutenção"
             />
           </label>
 
-          <div className="flex flex-col gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+          <div className="flex flex-col gap-1.5 text-xs text-[#6B7C99] dark:text-[#5A6E8A]">
             <span>Foto (opcional — nunca é obrigatória para avançar)</span>
             <div className="flex flex-wrap gap-2">
               {/*
@@ -417,7 +417,7 @@ export function FindingCard({
                 confiar no app e conferir tudo de novo no fim.
               */}
               {(finding.fotoIds ?? []).map((fotoId) => (
-                <div key={fotoId} className="relative h-16 w-16 overflow-hidden rounded border border-black/15 dark:border-white/15">
+                <div key={fotoId} className="relative h-16 w-16 overflow-hidden rounded border border-black/15 dark:border-[rgba(112,136,160,0.28)]">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={rondaFotoUrl(fotoId)} alt="" className="h-full w-full object-cover" />
                   <button
@@ -431,7 +431,7 @@ export function FindingCard({
                 </div>
               ))}
               {(finding.fotos ?? []).map((photo, index) => (
-                <div key={`local-${index}`} className="relative h-16 w-16 overflow-hidden rounded border border-black/15 dark:border-white/15">
+                <div key={`local-${index}`} className="relative h-16 w-16 overflow-hidden rounded border border-black/15 dark:border-[rgba(112,136,160,0.28)]">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={`data:${photo.mimeType};base64,${photo.dataBase64}`} alt="" className="h-full w-full object-cover" />
                   <span
@@ -468,7 +468,7 @@ export function FindingCard({
                 type="button"
                 onClick={() => cameraInputRef.current?.click()}
                 disabled={compressing}
-                className="flex h-16 w-16 flex-col items-center justify-center rounded border border-dashed border-black/25 px-1 text-center text-[9px] leading-tight text-slate-600 hover:border-cyan-500 hover:text-cyan-600 disabled:opacity-50 dark:border-white/25 dark:text-slate-400 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
+                className="flex h-16 w-16 flex-col items-center justify-center rounded border border-dashed border-black/25 px-1 text-center text-[9px] leading-tight text-[#6B7C99] hover:border-[#003C90] hover:text-[#003C90] disabled:opacity-50 dark:border-[rgba(112,136,160,0.46)] dark:text-[#5A6E8A] dark:hover:border-[#A0B8C8] dark:hover:text-[#A0B8C8]"
               >
                 {compressing ? "…" : "Tirar foto"}
               </button>
@@ -476,7 +476,7 @@ export function FindingCard({
                 type="button"
                 onClick={() => galleryInputRef.current?.click()}
                 disabled={compressing}
-                className="flex h-16 w-16 flex-col items-center justify-center rounded border border-dashed border-black/25 px-1 text-center text-[9px] leading-tight text-slate-600 hover:border-cyan-500 hover:text-cyan-600 disabled:opacity-50 dark:border-white/25 dark:text-slate-400 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
+                className="flex h-16 w-16 flex-col items-center justify-center rounded border border-dashed border-black/25 px-1 text-center text-[9px] leading-tight text-[#6B7C99] hover:border-[#003C90] hover:text-[#003C90] disabled:opacity-50 dark:border-[rgba(112,136,160,0.46)] dark:text-[#5A6E8A] dark:hover:border-[#A0B8C8] dark:hover:text-[#A0B8C8]"
               >
                 {compressing ? "…" : "Escolher"}
               </button>
@@ -488,7 +488,7 @@ export function FindingCard({
 
           <div
             id={fieldDomId(finding.id, "classificacao")}
-            className={`flex flex-col gap-1.5 text-xs text-slate-600 dark:text-slate-400 ${
+            className={`flex flex-col gap-1.5 text-xs text-[#6B7C99] dark:text-[#5A6E8A] ${
               lowConfidenceFields.has("classificacao") || isFieldPending("classificacao") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
             }`}
           >
@@ -529,7 +529,7 @@ export function FindingCard({
                   className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
                     finding.classificacao === option
                       ? CLASSIFICATION_FILL_CLASS[option]
-                      : "border-black/15 text-slate-600 hover:border-black/30 dark:border-white/15 dark:text-slate-400 dark:hover:border-white/30"
+                      : "border-black/15 text-[#6B7C99] hover:border-black/30 dark:border-[rgba(112,136,160,0.28)] dark:text-[#5A6E8A] dark:hover:border-[rgba(112,136,160,0.46)]"
                   }`}
                 >
                   {FINDING_CLASSIFICATION_LABELS[option]}
@@ -540,7 +540,7 @@ export function FindingCard({
 
           <label
             id={fieldDomId(finding.id, "gravidade")}
-            className={`flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400 ${
+            className={`flex flex-col gap-1 text-xs text-[#6B7C99] dark:text-[#5A6E8A] ${
               lowConfidenceFields.has("gravidade") || isFieldPending("gravidade") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
             }`}
           >
@@ -566,8 +566,8 @@ export function FindingCard({
 
               O campo fechado continua acompanhando o tema da página porque a
               aparência dele vem das classes explícitas ao lado
-              (`bg-transparent`, `text-slate-900 dark:text-slate-100`,
-              `border-black/15 dark:border-white/15`), que ganham do
+              (`bg-transparent`, `text-[#0A1B3D] dark:text-[#DCE6F2]`,
+              `border-black/15 dark:border-[rgba(112,136,160,0.28)]`), que ganham do
               `color-scheme`. O único resquício que o `color-scheme` ainda
               controla no campo fechado é a setinha desenhada pelo próprio
               navegador — ver a entrada no BUILDER.md para o que a verificação
@@ -583,7 +583,7 @@ export function FindingCard({
                   return next;
                 });
               }}
-              className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-sm text-slate-900 [color-scheme:dark] dark:border-white/15 dark:text-slate-100 dark:[color-scheme:light]"
+              className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-sm text-[#0A1B3D] [color-scheme:dark] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2] dark:[color-scheme:light]"
             >
               <option value="" disabled>
                 selecione…
@@ -599,7 +599,7 @@ export function FindingCard({
           {/* textarea nativa, sem componente customizado — teclado nativo aparece normalmente, o que garante ditado por voz de graça (ADR-021). */}
           <label
             id={fieldDomId(finding.id, "descricao")}
-            className={`flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400 ${
+            className={`flex flex-col gap-1 text-xs text-[#6B7C99] dark:text-[#5A6E8A] ${
               isFieldPending("descricao") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
             }`}
           >
@@ -615,38 +615,38 @@ export function FindingCard({
               value={finding.descricao ?? ""}
               onChange={(event) => onChange({ ...finding, descricao: event.target.value })}
               rows={3}
-              className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-sm text-slate-900 dark:border-white/15 dark:text-slate-100"
+              className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-sm text-[#0A1B3D] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2]"
               placeholder="O que foi observado…"
             />
           </label>
 
-          <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
+          <label className="flex flex-col gap-1 text-xs text-[#6B7C99] dark:text-[#5A6E8A]">
             Ação recomendada (opcional)
             <input
               type="text"
               value={finding.acaoRecomendada ?? ""}
               onChange={(event) => onChange({ ...finding, acaoRecomendada: event.target.value })}
-              className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-sm text-slate-900 [color-scheme:light] dark:border-white/15 dark:text-slate-100 dark:[color-scheme:dark]"
+              className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-sm text-[#0A1B3D] [color-scheme:light] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2] dark:[color-scheme:dark]"
             />
           </label>
 
-          <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
+          <label className="flex flex-col gap-1 text-xs text-[#6B7C99] dark:text-[#5A6E8A]">
             Responsável pela ação (opcional)
             <input
               type="text"
               value={finding.responsavel ?? ""}
               onChange={(event) => onChange({ ...finding, responsavel: event.target.value })}
-              className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-sm text-slate-900 [color-scheme:light] dark:border-white/15 dark:text-slate-100 dark:[color-scheme:dark]"
+              className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-sm text-[#0A1B3D] [color-scheme:light] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2] dark:[color-scheme:dark]"
             />
           </label>
 
-          <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
+          <label className="flex flex-col gap-1 text-xs text-[#6B7C99] dark:text-[#5A6E8A]">
             Prazo (opcional)
             <input
               type="date"
               value={finding.prazo ?? ""}
               onChange={(event) => onChange({ ...finding, prazo: event.target.value })}
-              className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-sm text-slate-900 [color-scheme:light] dark:border-white/15 dark:text-slate-100 dark:[color-scheme:dark]"
+              className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-sm text-[#0A1B3D] [color-scheme:light] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2] dark:[color-scheme:dark]"
             />
           </label>
         </div>
