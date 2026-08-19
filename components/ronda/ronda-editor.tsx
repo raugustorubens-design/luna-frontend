@@ -8,7 +8,9 @@ import { trySyncPendingRondas } from "@/lib/ronda/queue";
 import { duplicateFinding, findingsWithMissingFields, type RondaFinding, type RondaMetadata } from "@/lib/ronda/types";
 import { ENTRY_STATUS_LABEL } from "@/lib/ronda/list-view";
 import { mapIssuesToFindings, isOldFormatRejection, canDiscardInvalidItem, type ValidationIssue } from "@/lib/ronda/issues";
+import { scrollToField } from "@/lib/ronda/field-anchor";
 import { FindingCard } from "./finding-card";
+import { MissingFieldsNotice } from "./missing-fields-notice";
 
 /**
  * Edição de uma ronda, das duas origens que a lista agora mostra:
@@ -108,9 +110,25 @@ function Editor({ source }: { source: EditorSource }) {
    * na lista carregada.
    */
   const allowDiscardInvalid = queueStatus !== "invalid" || canDiscardInvalidItem(findings, queueIssues);
+  const totalMissingFields = useMemo(() => clientMissingFields.reduce((sum, entry) => sum + entry.missing.length, 0), [clientMissingFields]);
 
+  /**
+   * Pacote "gate com link ao campo" — "Salvar e enviar" precisa do mesmo
+   * gate que o wizard, com a mesma função (`findingsWithMissingFields`),
+   * não uma cópia: sem isto, uma ronda recusada abre para correção, a
+   * pessoa preenche parte, salva, volta para a fila e o servidor recusa de
+   * novo pelo campo que continua vazio. Aplicado também no modo `server`
+   * (não só `queue`): a mesma regra do backend vale para os dois — uma
+   * edição de ronda já confirmada que zere um campo obrigatório quebraria
+   * do mesmo jeito no próximo `PATCH`.
+   */
   async function handleSave() {
     if (!metadata) return;
+    if (totalMissingFields > 0) {
+      const first = clientMissingFields[0];
+      requestAnimationFrame(() => requestAnimationFrame(() => scrollToField(first.finding.id, first.missing[0])));
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     setSaved(false);
@@ -203,6 +221,8 @@ function Editor({ source }: { source: EditorSource }) {
 
           {findings.length === 0 && <p className="text-xs text-slate-500 dark:text-slate-400">Esta ronda não tem nenhum achado registrado.</p>}
 
+          {clientMissingFields.length > 0 && <MissingFieldsNotice missingFieldsList={clientMissingFields} />}
+
           {/*
             `onRemove` só existe no modo `queue`, e a diferença não é
             arbitrária. `PATCH /convergia/ronda/:id` faz **upsert por `id`**
@@ -258,13 +278,29 @@ function Editor({ source }: { source: EditorSource }) {
       </main>
 
       <footer className="ronda-chrome-bottom shrink-0 border-t border-black/10 px-4 py-3 dark:border-white/10">
+        {/*
+          `aria-disabled`, não `disabled`, quando falta campo — mesmo
+          motivo do botão "Concluir" do wizard: em campo, o toque precisa
+          virar resposta (rolar até o campo), não silêncio. `disabled` de
+          verdade continua valendo enquanto a requisição está em voo
+          (`saving`), onde não há nada útil a fazer com um segundo clique.
+        */}
         <button
           type="button"
           disabled={saving}
+          aria-disabled={totalMissingFields > 0}
           onClick={() => void handleSave()}
-          className="w-full rounded bg-emerald-500 px-4 py-2 text-sm font-medium text-black disabled:opacity-40"
+          className={`w-full rounded px-4 py-2 text-sm font-medium text-black transition-opacity disabled:opacity-40 ${
+            totalMissingFields > 0 ? "bg-emerald-500/50" : "bg-emerald-500"
+          }`}
         >
-          {saving ? "Salvando…" : isQueue ? "Salvar e enviar" : "Salvar alterações"}
+          {saving
+            ? "Salvando…"
+            : totalMissingFields > 0
+              ? `Faltam ${totalMissingFields} campo${totalMissingFields === 1 ? "" : "s"}`
+              : isQueue
+                ? "Salvar e enviar"
+                : "Salvar alterações"}
         </button>
       </footer>
     </div>

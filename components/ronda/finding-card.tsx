@@ -16,6 +16,7 @@ import {
   type FindingClassification,
   type MissingField,
 } from "@/lib/ronda/types";
+import { fieldDomId } from "@/lib/ronda/field-anchor";
 import { compressPhoto, photoToBase64, readImageDimensions, type CompressedPhoto } from "@/lib/ronda/photo";
 import { saveOriginalPhoto } from "@/lib/ronda/db";
 import { uploadFoto, rondaFotoUrl } from "@/lib/ronda/api-client";
@@ -384,6 +385,7 @@ export function FindingCard({
       {isIdentified && (
         <div className="mt-3 flex flex-col gap-3 border-t border-black/10 pt-3 dark:border-white/10">
           <label
+            id={fieldDomId(finding.id, "departamento")}
             className={`flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400 ${
               isFieldPending("departamento") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
             }`}
@@ -485,6 +487,7 @@ export function FindingCard({
           </div>
 
           <div
+            id={fieldDomId(finding.id, "classificacao")}
             className={`flex flex-col gap-1.5 text-xs text-slate-600 dark:text-slate-400 ${
               lowConfidenceFields.has("classificacao") || isFieldPending("classificacao") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
             }`}
@@ -536,6 +539,7 @@ export function FindingCard({
           </div>
 
           <label
+            id={fieldDomId(finding.id, "gravidade")}
             className={`flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400 ${
               lowConfidenceFields.has("gravidade") || isFieldPending("gravidade") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
             }`}
@@ -594,6 +598,7 @@ export function FindingCard({
 
           {/* textarea nativa, sem componente customizado — teclado nativo aparece normalmente, o que garante ditado por voz de graça (ADR-021). */}
           <label
+            id={fieldDomId(finding.id, "descricao")}
             className={`flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400 ${
               isFieldPending("descricao") ? "rounded border border-amber-400/60 p-2 -m-2" : ""
             }`}
