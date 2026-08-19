@@ -13,12 +13,19 @@ import { isAllowedEmail } from "./lib/forge/allowed-email";
  */
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [Google],
+  // `2026-08-19-acesso-publico.md`, Etapa 2 — sem isto, um e-mail fora da
+  // allowlist cai na tela de erro padrão do NextAuth (beco sem saída, só
+  // "Entrar", nome técnico do erro na cara). `app/acesso-negado/page.tsx`
+  // troca isso por explicação curta + link de volta ao site.
+  pages: {
+    error: "/acesso-negado",
+  },
   callbacks: {
     /**
      * Rejeita o login de verdade (nenhuma sessão é criada) quando o e-mail
      * não está na allowlist — não é apenas "não mostrar" algo na UI depois.
-     * Auth.js redireciona para a página de erro padrão (`AccessDenied`)
-     * quando este callback retorna `false`.
+     * Auth.js redireciona para `pages.error` (acima) quando este callback
+     * retorna `false`.
      */
     async signIn({ user }) {
       return isAllowedEmail(user.email, process.env.FORGE_ALLOWED_EMAIL);
