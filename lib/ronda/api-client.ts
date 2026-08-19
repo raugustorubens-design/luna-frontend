@@ -1,5 +1,5 @@
 import { LUNA_GATEWAY_BASE_URL } from "@/lib/forge/api-client";
-import type { RondaSubmission, RondaPatch, RondaFlag, RondaSuggestion, RondaPhoto, RondaFotoSugestao, SuggestionCorrectionPayload } from "./types";
+import type { RondaSubmission, RondaPatch, RondaFlag, RondaSuggestion, RondaPhoto, RondaFotoSugestao, SuggestionCorrectionPayload, PhotoExif } from "./types";
 import type { ValidationIssue } from "./issues";
 
 export interface RondaSubmitResult {
@@ -178,12 +178,20 @@ export async function patchRonda(rondaId: string, patch: RondaPatch): Promise<Ro
  * que impede a original de caber no payload de 25 MB do relatório. A
  * original é opcional — em rede ruim, sobe só a versão de campo, que é a que
  * o relatório usa, e nada se perde no documento final.
+ *
+ * `exif`, quando informado, é a procedência lida do arquivo original antes
+ * da compressão (`extractPhotoExif`, `lib/ronda/photo.ts`) — o `campo`/
+ * `original` que sobem aqui já não carregam mais esse metadado, apagado pelo
+ * canvas na hora de comprimir. Vai como campo de texto (JSON) do mesmo
+ * multipart, não como header, para não competir com o teto de tamanho do
+ * arquivo.
  */
-export async function uploadFoto(campo: Blob, original?: Blob, achadoId?: string): Promise<{ fotoId: string }> {
+export async function uploadFoto(campo: Blob, original?: Blob, achadoId?: string, exif?: PhotoExif | null): Promise<{ fotoId: string }> {
   const form = new FormData();
   form.set("campo", campo, "campo.jpg");
   if (original) form.set("original", original, "original.jpg");
   if (achadoId) form.set("achadoId", achadoId);
+  if (exif) form.set("exif", JSON.stringify(exif));
 
   const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/convergia/ronda/foto`, { method: "POST", body: form });
   if (!response.ok) {

@@ -57,7 +57,7 @@ async function promoteFinding(finding: RondaFinding): Promise<RondaFinding> {
   for (const [index, photo] of embedded.entries()) {
     const original = originals.find((record) => record.index === index);
     try {
-      const { fotoId } = await uploadFoto(photoToBlob(photo), original?.blob, finding.id);
+      const { fotoId } = await uploadFoto(photoToBlob(photo), original?.blob, finding.id, photo.exif);
       promotedIds.push(fotoId);
       // A original já está no servidor; a cópia local perdeu a razão de
       // existir e é o maior arquivo do aparelho.
