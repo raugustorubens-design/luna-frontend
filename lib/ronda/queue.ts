@@ -4,6 +4,7 @@
  * o app, tenta reenviar o que estiver pendente." Nenhuma ação manual do
  * usuário além de reconectar.
  */
+import { getSession } from "next-auth/react";
 import { listQueue, updateQueueItem, deleteQueueItem, discardRondaLocalCopies, type QueueItem } from "./db";
 import { submitRonda, RondaSubmitError } from "./api-client";
 
@@ -17,6 +18,17 @@ let syncing = false;
  */
 export function isPermanentRejection(error: unknown): boolean {
   return error instanceof RondaSubmitError && error.status === 422;
+}
+
+/**
+ * 401 (`2026-08-19-acesso-publico.md`, Etapa 3, armadilha b): a sessão
+ * expirou, não o dado nem a rede. Reenviar o mesmo payload sem sessão
+ * válida vai falhar de novo do mesmo jeito — mesmo raciocínio de
+ * `isPermanentRejection`, causa diferente. O achado em si está correto,
+ * só falta confirmar quem está enviando.
+ */
+export function isSessionExpiredRejection(error: unknown): boolean {
+  return error instanceof RondaSubmitError && error.status === 401;
 }
 
 /**
@@ -59,14 +71,54 @@ async function reclaimStaleSyncing(items: QueueItem[], onProgress?: (item: Queue
   return reclaimed;
 }
 
-/** Tenta enviar todo item "pending"/"error" da fila, um de cada vez (evita disparar N requisições simultâneas de foto grande na primeira reconexão). Itens órfãos em "syncing" voltam pra "pending" antes — ver `reclaimStaleSyncing`. */
+/**
+ * Parte pura (testável sem IndexedDB/rede): com sessão válida,
+ * "unauthenticated" vira "pending"; sem sessão, nada muda. O que resolve
+ * "unauthenticated" é a pessoa logar de novo — a partir daí o item volta
+ * pra "pending" sozinho, sem exigir descartar/refazer a ronda: o achado
+ * está certo, só faltava sessão.
+ */
+export function reclaimUnauthenticatedItems(items: QueueItem[], hasSession: boolean): QueueItem[] {
+  if (!hasSession) return items;
+  return items.map((item) => (item.status === "unauthenticated" ? { ...item, status: "pending", lastError: undefined } : item));
+}
+
+/**
+ * Devolve à fila os itens presos em "unauthenticated" — só quando há
+ * sessão válida agora. Sem isto, o técnico logaria de novo (botão "Entrar"
+ * de `QueueStatusBar`) e a ronda continuaria parada, porque nada além do
+ * clique manual em "Tentar enviar agora" pegaria "unauthenticated" — que
+ * nem é tentado ali (ver `toSend` abaixo, mesmo raciocínio de "invalid":
+ * não insiste contra uma causa que insistir não resolve).
+ *
+ * `getSession()` faz um `fetch` a `/api/auth/session` — se isso falhar
+ * (ex.: ainda offline), trata como "segue sem sessão" em vez de derrubar a
+ * sincronização inteira; o item permanece "unauthenticated" e tenta de novo
+ * no próximo gatilho (reconexão, reabertura, ou o próprio clique em
+ * "Entrar" quando o login realmente completar).
+ */
+async function reclaimUnauthenticated(items: QueueItem[], onProgress?: (item: QueueItem) => void): Promise<QueueItem[]> {
+  if (!items.some((item) => item.status === "unauthenticated")) return items;
+
+  const session = await getSession().catch(() => null);
+  const reclaimed = reclaimUnauthenticatedItems(items, Boolean(session?.user));
+  for (const [index, item] of items.entries()) {
+    if (item.status !== "unauthenticated" || reclaimed[index].status !== "pending") continue;
+    await updateQueueItem(item.localId, { status: "pending", lastError: undefined });
+    onProgress?.(reclaimed[index]);
+  }
+  return reclaimed;
+}
+
+/** Tenta enviar todo item "pending"/"error" da fila, um de cada vez (evita disparar N requisições simultâneas de foto grande na primeira reconexão). Itens órfãos em "syncing" voltam pra "pending" antes (`reclaimStaleSyncing`); itens "unauthenticated" voltam pra "pending" se já houver sessão válida (`reclaimUnauthenticated`). */
 export async function trySyncPendingRondas(onProgress?: (item: QueueItem) => void): Promise<void> {
   if (syncing) return; // evita corridas: evento 'online' + chamada manual ao mesmo tempo
   if (typeof navigator !== "undefined" && !navigator.onLine) return;
 
   syncing = true;
   try {
-    const items = await reclaimStaleSyncing(await listQueue(), onProgress);
+    const afterSyncing = await reclaimStaleSyncing(await listQueue(), onProgress);
+    const items = await reclaimUnauthenticated(afterSyncing, onProgress);
     const toSend = items.filter((item) => item.status === "pending" || item.status === "error");
 
     for (const item of toSend) {
@@ -104,8 +156,13 @@ export async function trySyncPendingRondas(onProgress?: (item: QueueItem) => voi
         // e só `RondaEditor` tem o que precisa pra decidir (o gate do
         // cliente sobre o conteúdo carregado, ver `lib/ronda/issues.ts`).
         const permanent = isPermanentRejection(error);
-        const nextStatus = permanent ? "invalid" : "error";
-        const nextMessage = permanent ? `Este registro não pode ser reenviado automaticamente (rejeitado pelo servidor: ${message}).` : message;
+        const sessionExpired = !permanent && isSessionExpiredRejection(error);
+        const nextStatus = permanent ? "invalid" : sessionExpired ? "unauthenticated" : "error";
+        const nextMessage = permanent
+          ? `Este registro não pode ser reenviado automaticamente (rejeitado pelo servidor: ${message}).`
+          : sessionExpired
+            ? "Sessão expirada — entre novamente para continuar o envio. O achado está correto, só falta confirmar login."
+            : message;
         await updateQueueItem(item.localId, { status: nextStatus, lastError: nextMessage, issues, attempts: item.attempts + 1 });
         onProgress?.({ ...item, status: nextStatus, lastError: nextMessage, issues });
         // Uma falha (ex. rede caiu de novo no meio da fila) não deve

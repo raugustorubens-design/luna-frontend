@@ -47,6 +47,7 @@ export const ENTRY_STATUS_LABEL: Record<QueueStatus | "server", string> = {
   synced: "Confirmada",
   error: "Falhou — vai tentar de novo",
   invalid: "Rejeitada pelo servidor",
+  unauthenticated: "Sessão expirada — entre novamente",
 };
 
 /**

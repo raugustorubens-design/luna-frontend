@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isPermanentRejection, reclaimStaleSyncingItems } from "../queue";
+import { isPermanentRejection, isSessionExpiredRejection, reclaimStaleSyncingItems, reclaimUnauthenticatedItems } from "../queue";
 import type { QueueItem } from "../db";
 import { RondaSubmitError } from "../api-client";
 
@@ -12,6 +12,18 @@ test("isPermanentRejection is false for a network/5xx failure", () => {
   assert.equal(isPermanentRejection(new RondaSubmitError("Falha ao enviar ronda (HTTP 500).", undefined, 500)), false);
   assert.equal(isPermanentRejection(new TypeError("Failed to fetch")), false);
   assert.equal(isPermanentRejection(new RondaSubmitError("sem status")), false);
+});
+
+// `2026-08-19-acesso-publico.md`, Etapa 3, armadilha (b): 401 é sessão
+// expirada, não dado errado (422) nem rede fora do ar (5xx/TypeError).
+test("isSessionExpiredRejection is true for a 401", () => {
+  assert.equal(isSessionExpiredRejection(new RondaSubmitError("Falha ao enviar ronda (HTTP 401).", undefined, 401)), true);
+});
+
+test("isSessionExpiredRejection is false for a 422/5xx/network failure", () => {
+  assert.equal(isSessionExpiredRejection(new RondaSubmitError("Envio de ronda reprovado na validação.", undefined, 422)), false);
+  assert.equal(isSessionExpiredRejection(new RondaSubmitError("Falha ao enviar ronda (HTTP 500).", undefined, 500)), false);
+  assert.equal(isSessionExpiredRejection(new TypeError("Failed to fetch")), false);
 });
 
 /**
@@ -50,4 +62,32 @@ test("reclaimStaleSyncingItems não mexe nos outros status", () => {
 test("reclaimStaleSyncingItems limpa o erro herdado da tentativa interrompida", () => {
   const stale: QueueItem = { ...queued("syncing", "presa"), lastError: "Falha ao enviar ronda (HTTP 500)." };
   assert.equal(reclaimStaleSyncingItems([stale])[0].lastError, undefined);
+});
+
+/**
+ * `2026-08-19-acesso-publico.md`, Etapa 3, armadilha (b): item "unauthenticated"
+ * só volta pra "pending" com sessão válida — sem isto, viraria retry cego
+ * contra a mesma causa (sessão ainda expirada) que não se resolve sozinha.
+ */
+test("reclaimUnauthenticatedItems devolve item 'unauthenticated' para 'pending' quando há sessão válida", () => {
+  const reclaimed = reclaimUnauthenticatedItems([queued("unauthenticated", "presa")], true);
+  assert.equal(reclaimed[0].status, "pending");
+});
+
+test("reclaimUnauthenticatedItems não mexe em 'unauthenticated' sem sessão válida", () => {
+  const reclaimed = reclaimUnauthenticatedItems([queued("unauthenticated", "presa")], false);
+  assert.equal(reclaimed[0].status, "unauthenticated");
+});
+
+test("reclaimUnauthenticatedItems não mexe nos outros status, com ou sem sessão", () => {
+  const original = [queued("pending", "a"), queued("synced", "b"), queued("error", "c"), queued("invalid", "d")];
+  assert.deepEqual(
+    reclaimUnauthenticatedItems(original, true).map((i) => i.status),
+    ["pending", "synced", "error", "invalid"],
+  );
+});
+
+test("reclaimUnauthenticatedItems limpa o erro herdado ao reclamar", () => {
+  const stale: QueueItem = { ...queued("unauthenticated", "presa"), lastError: "Sessão expirada — entre novamente para continuar o envio." };
+  assert.equal(reclaimUnauthenticatedItems([stale], true)[0].lastError, undefined);
 });

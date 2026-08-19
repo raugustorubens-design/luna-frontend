@@ -12,6 +12,13 @@ export const metadata = {
  * que devolve pro mesmo lugar, e o nome técnico do erro na cara — nenhuma
  * das duas coisas faz sentido pra quem não veio depurar nada.
  *
+ * Também é o destino de `middleware.ts` na Etapa 3 quando a sessão já
+ * existe mas o e-mail não está na allowlist daquela área especificamente
+ * (ex.: e-mail do /ronda tentando abrir /forge) — reenviar pro login de
+ * novo faria o Google reautenticar em silêncio com a mesma conta e cair no
+ * mesmo lugar, um loop; aqui a pessoa entende o que houve e pode voltar ou
+ * entrar com outra conta.
+ *
  * De propósito sem mostrar o `?error=` da URL — visitante não precisa saber
  * qual foi a causa técnica, só que a área é restrita e como voltar.
  */

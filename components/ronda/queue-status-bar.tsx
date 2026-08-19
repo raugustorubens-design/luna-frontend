@@ -1,5 +1,6 @@
 "use client";
 
+import { signIn } from "next-auth/react";
 import type { QueueCounts, QueueItem } from "@/lib/ronda/db";
 import { canDiscardInvalidItem } from "@/lib/ronda/issues";
 
@@ -49,6 +50,12 @@ export function QueueStatusBar({
               {counts.invalid} não pôde{counts.invalid === 1 ? "" : "ram"} ser reenviada{counts.invalid === 1 ? "" : "s"}
             </span>
           )}
+          {counts.unauthenticated > 0 && (
+            <span className="flex items-center gap-1.5 text-sky-400">
+              <span className="h-2 w-2 rounded-full bg-sky-400" />
+              {counts.unauthenticated} aguardando login
+            </span>
+          )}
           <span className="flex items-center gap-1.5 text-emerald-400">
             <span className="h-2 w-2 rounded-full bg-emerald-400" />
             {counts.synced} confirmada{counts.synced === 1 ? "" : "s"} no servidor
@@ -94,6 +101,30 @@ export function QueueStatusBar({
               </div>
             );
           })}
+        </div>
+      )}
+      {/*
+        `2026-08-19-acesso-publico.md`, Etapa 3, armadilha (b) — distinto do
+        bloco "invalid" acima: aqui o achado está correto, só falta sessão.
+        Nada de "descartar"/"refazer" — o único botão útil é logar de novo;
+        assim que a sessão voltar, o item some sozinho deste bloco (volta
+        pra "pending" via `reclaimUnauthenticated`, `lib/ronda/queue.ts`).
+      */}
+      {counts.unauthenticated > 0 && (
+        <div className="flex flex-col gap-2 border-t border-sky-400/30 bg-sky-400/10 px-4 py-2 text-sky-900 dark:text-sky-200">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p>
+              {counts.unauthenticated} registro{counts.unauthenticated === 1 ? "" : "s"} não {counts.unauthenticated === 1 ? "pôde" : "puderam"} ser
+              {" "}enviado{counts.unauthenticated === 1 ? "" : "s"} porque a sessão expirou. O achado está correto — entre de novo pra continuar o envio.
+            </p>
+            <button
+              type="button"
+              onClick={() => void signIn("google", { callbackUrl: typeof window !== "undefined" ? window.location.href : "/ronda/historico" })}
+              className="shrink-0 rounded border border-sky-400/50 px-2 py-1 text-[11px] hover:border-sky-500"
+            >
+              Entrar
+            </button>
+          </div>
         </div>
       )}
     </div>
