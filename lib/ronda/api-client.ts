@@ -198,3 +198,60 @@ export async function uploadFoto(campo: Blob, original?: Blob, achadoId?: string
 export function rondaFotoUrl(fotoId: string, versao?: "original"): string {
   return `${LUNA_GATEWAY_BASE_URL}/convergia/ronda/foto/${encodeURIComponent(fotoId)}${versao === "original" ? "?versao=original" : ""}`;
 }
+
+export interface RondaRelatorioSummary {
+  relatorioId: string;
+  rondaId: string;
+  filename: string;
+  mimeType: string;
+  format: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface RondaRelatorioArquivo {
+  blob: Blob;
+  filename: string;
+  mimeType: string;
+}
+
+/**
+ * `POST /convergia/ronda/:id/relatorio` — gera o relatório "Detalhado" (uma
+ * seção por achado, com fotos) e guarda por 7 dias no servidor. Só chame
+ * isto para uma ronda já confirmada pelo servidor (`kind: "server"` em
+ * `list-view.ts`) — uma ronda ainda na fila local não tem `rondaId` real
+ * pra gerar relatório a partir dele.
+ */
+export async function gerarRelatorioRonda(rondaId: string): Promise<RondaRelatorioSummary> {
+  const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/convergia/ronda/${encodeURIComponent(rondaId)}/relatorio`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ modelo: "detalhado", formato: "docx" }),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new RondaSubmitError(body?.error ?? `Falha ao gerar o relatório (HTTP ${response.status}).`, body?.issues, response.status);
+  }
+
+  const body = await response.json();
+  return body.relatorio as RondaRelatorioSummary;
+}
+
+/** `GET /convergia/ronda/relatorio/:relatorioId` — bytes do relatório já gerado, enquanto não passar dos 7 dias de retenção (`RelatorioStore`). Mesmo padrão de `transformConvergiaFile` (lib/forge/api-client.ts): lê o nome do arquivo do Content-Disposition, devolve o blob pronto pra download. */
+export async function baixarRelatorioRonda(relatorioId: string): Promise<RondaRelatorioArquivo> {
+  const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/convergia/ronda/relatorio/${encodeURIComponent(relatorioId)}`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new RondaSubmitError(body?.error ?? `Falha ao baixar o relatório (HTTP ${response.status}).`, body?.issues, response.status);
+  }
+
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const filenameMatch = disposition.match(/filename="([^"]+)"/);
+
+  return {
+    blob: await response.blob(),
+    filename: filenameMatch?.[1] ?? "relatorio-ronda",
+    mimeType: response.headers.get("Content-Type") ?? "application/octet-stream",
+  };
+}
