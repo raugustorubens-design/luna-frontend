@@ -255,3 +255,78 @@ export async function baixarRelatorioRonda(relatorioId: string): Promise<RondaRe
     mimeType: response.headers.get("Content-Type") ?? "application/octet-stream",
   };
 }
+
+/** Só os dois campos que a curadoria pode editar — o servidor recusa qualquer outro (ver `luna-core`, `CURADORIA_EDITABLE_FIELDS`). */
+export type CuradoriaEditableField = "descricao" | "acaoRecomendada";
+
+export interface CuradoriaAchado {
+  achadoId: string;
+  departamento?: string;
+  classificacao?: string;
+  gravidade?: string;
+  descricao: string;
+  descricaoEditada: boolean;
+  acaoRecomendada: string;
+  acaoRecomendadaEditada: boolean;
+  fotoIds: string[];
+  fotosEmbutidasCount: number;
+  excluido: boolean;
+  motivoExclusao?: string;
+}
+
+export interface CuradoriaLista {
+  rondaId: string;
+  achados: CuradoriaAchado[];
+  updatedAt: string;
+}
+
+/**
+ * `GET /convergia/ronda/:id/curadoria` — achados identificados da ronda já
+ * mesclados com o que foi editado/excluído (`luna-core`,
+ * `RelatorioCuradoriaStore`). A ronda salva nunca aparece "crua" aqui —
+ * quem quer isso usa `getRonda`.
+ */
+export async function getCuradoria(rondaId: string): Promise<CuradoriaLista> {
+  const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/convergia/ronda/${encodeURIComponent(rondaId)}/curadoria`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new RondaSubmitError(body?.error ?? `Falha ao carregar a curadoria (HTTP ${response.status}).`, body?.issues, response.status);
+  }
+  return (await response.json()) as CuradoriaLista;
+}
+
+/** `PATCH /convergia/ronda/:id/curadoria/achados/:achadoId` — só muda o que entra no relatório; a ronda salva não é tocada. */
+export async function editarCuradoriaAchado(rondaId: string, achadoId: string, campo: CuradoriaEditableField, texto: string): Promise<void> {
+  const response = await fetch(
+    `${LUNA_GATEWAY_BASE_URL}/convergia/ronda/${encodeURIComponent(rondaId)}/curadoria/achados/${encodeURIComponent(achadoId)}`,
+    { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ campo, texto }) },
+  );
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new RondaSubmitError(body?.error ?? `Falha ao salvar a edição (HTTP ${response.status}).`, body?.issues, response.status);
+  }
+}
+
+/** `DELETE /convergia/ronda/:id/curadoria/achados/:achadoId` — motivo obrigatório (servidor recusa vazio); o achado continua na ronda, só sai do próximo relatório. */
+export async function excluirCuradoriaAchado(rondaId: string, achadoId: string, motivo: string): Promise<void> {
+  const response = await fetch(
+    `${LUNA_GATEWAY_BASE_URL}/convergia/ronda/${encodeURIComponent(rondaId)}/curadoria/achados/${encodeURIComponent(achadoId)}`,
+    { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ motivo }) },
+  );
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new RondaSubmitError(body?.error ?? `Falha ao excluir o achado (HTTP ${response.status}).`, body?.issues, response.status);
+  }
+}
+
+/** `POST /convergia/ronda/:id/curadoria/achados/:achadoId/restaurar` — desfaz a exclusão. */
+export async function restaurarCuradoriaAchado(rondaId: string, achadoId: string): Promise<void> {
+  const response = await fetch(
+    `${LUNA_GATEWAY_BASE_URL}/convergia/ronda/${encodeURIComponent(rondaId)}/curadoria/achados/${encodeURIComponent(achadoId)}/restaurar`,
+    { method: "POST" },
+  );
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new RondaSubmitError(body?.error ?? `Falha ao restaurar o achado (HTTP ${response.status}).`, body?.issues, response.status);
+  }
+}
