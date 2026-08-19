@@ -2126,3 +2126,133 @@ em `GENESIS/pacotes/README.md` (`Luna-context.md`) — o próximo item
 divergente que este pacote menciona mas que não encontrei neste
 repositório ainda, precisa de confirmação do Architect antes de
 prosseguir.
+
+## 2026-08-19 — Gate com link ao campo: bloqueia envio incompleto na edição, aviso vira lista navegável (`#37`)
+
+Executei `GENESIS/pacotes/2026-08-19-gate-com-link-ao-campo.md`
+(`Luna-context.md`). Pedido do Arquiteto, 17/08: "na hora de subir, não
+subir até os campos obrigatórios estarem preenchidos e informar o campo
+que está faltando, tipo um link até o campo." Base: o gate urgente (`#30`,
+`missingRequiredWhenIdentified`) já estava mergeado — confirmei isso numa
+sessão anterior antes de começar este pacote.
+
+### Decisão do Architect antes de começar
+
+O pacote deixa em aberto, como decisão do Architect, o comportamento do
+botão quando falta campo: manter `disabled` de verdade, ou o recomendado
+(`aria-disabled`, clicável, toque rola até o campo). Perguntei — a
+resposta foi o recomendado. Implementado assim nos dois botões
+("Concluir" do wizard, "Salvar e enviar"/"Salvar alterações" do editor).
+
+### O que fiz
+
+**1. Gate na tela de edição.** `ronda-editor.tsx` não tinha gate nenhum —
+"Salvar e enviar" chamava `updateQueueSubmission` direto. Agora usa
+`findingsWithMissingFields` (a mesma função do wizard, importada, não
+copiada) antes de salvar; se houver campo faltando, não salva — rola até
+o primeiro. Apliquei o gate também ao modo `server` (edição de ronda já
+confirmada via `PATCH`), não só `queue`: a mesma regra do backend vale
+para os dois, e uma edição que zere um campo obrigatório numa ronda já
+confirmada quebraria do mesmo jeito no próximo `PATCH`. O pacote não
+distinguia os dois modos com essa precisão; achei a leitura mais segura.
+
+**2. Invariante da fila.** `enqueueRonda`/`updateQueueSubmission`
+(`lib/ronda/db.ts`) passam a chamar `assertQueueableSubmission` antes de
+tocar o banco — lança `RondaQueueValidationError` se algum achado
+`identificado` estiver sem os 4 campos. Extraída como função pura
+(mesmo padrão de `reclaimStaleSyncingItems` em `queue.ts`) porque
+`db.ts` só é testável em Node na parte que não abre IndexedDB de
+verdade — confirmei isso rodando `db.test.ts` como já existia (só
+`summarizeQueue`, nada que chame `openDb`) antes de decidir a extração.
+
+**3. `MissingFieldsNotice`** (novo componente,
+`components/ronda/missing-fields-notice.tsx`), compartilhado por wizard
+e editor: agrupa por achado (`findingTitle` + `RISK_STATE_LABELS`,
+igual ao mockup do pacote), cada campo faltando é um `<a href="#...">`
+real, nunca só uma contagem. `onNavigate` opcional — o wizard usa pra
+trocar pra Etapa B antes de rolar (a Etapa C não renderiza achado
+nenhum); o editor não precisa, não tem etapas.
+
+**4. `lib/ronda/field-anchor.ts`** — `fieldDomId(findingId, field)`, um
+gerador só, usado no `id` do wrapper de cada campo em `FindingCard` e no
+alvo do link do aviso. `scrollToField`: foca primeiro
+(`preventScroll: true`), rola com `scrollIntoView({block: "center"})`,
+rola de novo 350ms depois (o teclado do celular abre *depois* do foco e
+encolhe a viewport).
+
+**5. Os dois botões** ("Concluir LUNA Safety Walk", "Salvar e
+enviar"/"Salvar alterações") — `aria-disabled` em vez de `disabled` real
+quando falta campo; clique nesse estado não submete, rola até o primeiro
+campo faltando; rótulo muda para "Faltam N campos".
+
+### Dois achados do pacote que não se aplicam a este código — registrados, não inventados
+
+- **"Achado em cartão recolhido"** — a Armadilha 3 do pacote presume que
+  um `FindingCard` pode estar recolhido. Não existe esse estado hoje:
+  todo achado `identificado` renderiza os campos sempre visíveis, sem
+  accordion. Não implementei expandir/recolher pra simular a armadilha —
+  ela simplesmente não existe neste código, e inventar um estado de UI só
+  pra cobrir uma armadilha do pacote seria escopo não pedido.
+- **"Cabeçalho fixo" (Armadilha 2, `scroll-margin-top`)** — verifiquei a
+  estrutura de `ronda-wizard.tsx`/`ronda-editor.tsx`: o cabeçalho fica
+  *fora* de `<main>`, num container irmão que não rola (`ronda-chrome-
+  top`), não sobreposto ao conteúdo. Não há o que compensar com
+  `scroll-margin-top`. Usei `block: "center"` no `scrollIntoView`, que
+  resolve o mesmo problema de forma mais robusta e não depende da altura
+  exata de nada.
+
+### Verificação
+
+`pnpm typecheck`, `pnpm run test:constitution`, `pnpm build` — verdes.
+`pnpm test` — **110/110** (98 antes + 12 novos: 8 em
+`field-anchor.test.ts`, 4 em `db.test.ts` — nenhum teste existente
+alterado).
+
+Ponta a ponta, via Playwright contra o dev server real (`pnpm run dev`,
+não só build), dois cenários:
+
+**Wizard** (celular emulado, 390×700): preenchi a Etapa A, adicionei um
+achado avulso na Etapa B sem preencher nada, fui pra Etapa C. Confirmado:
+aviso "Faltam 4 campos" com 4 links; clicar no link de "Descrição" trocou
+pra Etapa B, focou a `textarea` certa (`document.activeElement`
+confirmado), com o campo dentro da viewport (`getBoundingClientRect`
+confirmado, sem parte negativa nem além de `innerHeight`); depois de
+preencher os 4 campos, o botão "Concluir" perdeu o `aria-disabled`.
+
+**Editor**: semeei um item de fila diretamente no IndexedDB (bypassando
+`enqueueRonda` de propósito — simula dado gravado *antes* desta correção
+existir), achado `identificado` com os outros 3 campos preenchidos e
+`departamento` vazio, status `"invalid"`. Abri `/ronda/fila/<id>`.
+Confirmado: aviso "Faltam 1 campo" aparece; botão mostra "Faltam 1 campo"
+e `aria-disabled="true"`; clicar nele sem corrigir (clique forçado — o
+Playwright trata `aria-disabled` como não-clicável na checagem dele
+próprio, mas o navegador real dispara o evento normalmente, que é
+exatamente o comportamento pedido) não navega, não mostra mensagem de
+sucesso, e o item continua `"invalid"` no IndexedDB (conferido por
+leitura direta); preenchendo o departamento e salvando de novo, o item
+sai de `"invalid"` com o valor persistido — confirmado por leitura direta
+do registro. A tentativa automática de reenvio em seguida falhou por
+rede (`status` virou `"error"`, não `"pending"`) — **mesma limitação já
+registrada no `BUILDER.md` do `#30`**: este sandbox não alcança o Gateway
+de produção real. Não é falha do gate; é o ambiente.
+
+### O que NÃO fiz, por decisão consciente
+
+- Não toquei `luna-core`, `app/forge/`, `components/forge/`,
+  `app/page.tsx`.
+- Não implementei um estado de card recolhido que não existe (ver achado
+  acima).
+- Não cobri metadados da ronda (`metadataComplete` já tem gate próprio) —
+  fora de escopo, como o próprio pacote registra.
+- Não escrevi um teste "gate do editor devolve a mesma lista que o do
+  wizard" — os dois chamam a mesmíssima função importada
+  (`findingsWithMissingFields`), então um teste assim testaria
+  `f === f`. A garantia real é não ter copiado a função, o que o import
+  único já garante por construção.
+
+Next action: Architect revisar e mergear o `#37`. Depois, o `#36` (tirar
+o roxo) já está mergeado e este `#37` fecha a segunda peça da fila em
+`GENESIS/pacotes/README.md` — falta só o Pacote C (Safety Walk cores),
+que depende deste merge e de confirmação de que a ronda do Sylvamo
+realmente subiu em campo (ação humana, já registrada como pendente desde
+o `#30`).
