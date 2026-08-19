@@ -11,6 +11,7 @@
  * para não justificar uma dependência nova só para isto.
  */
 import type { RondaSubmission, RondaMetadata, RondaFinding, RondaClosing, SuggestionRecord } from "./types";
+import { findingsWithMissingFields } from "./types";
 import type { ValidationIssue } from "./issues";
 
 const DB_NAME = "luna-ronda";
@@ -189,7 +190,32 @@ export function newLocalId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `local_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
+/**
+ * Pacote "gate com link ao campo" (`GENESIS/pacotes/2026-08-19-gate-com-
+ * link-ao-campo.md`) — o gate do cliente vira invariante da fila, não só do
+ * botão "Concluir". Um item que não pode passar não deve ocupar fila, não
+ * deve gastar upload, não deve gerar 422 e não deve virar registro
+ * `invalid` que depois alguém precisa entender: o portão vem antes do
+ * custo. `RondaWizard`/`RondaEditor` já checam antes de chamar
+ * `enqueueRonda`/`updateQueueSubmission` — isto é defesa, não o único
+ * lugar em que a regra vale, pra qualquer caminho futuro que enfileire sem
+ * passar pelos dois continuar coberto.
+ */
+export class RondaQueueValidationError extends Error {
+  constructor(public readonly missing: ReturnType<typeof findingsWithMissingFields>) {
+    super("Ronda com achado identificado sem os campos obrigatórios não pode entrar na fila.");
+    this.name = "RondaQueueValidationError";
+  }
+}
+
+/** Parte pura do gate da fila — extraída pra ser testável sem IndexedDB, mesmo padrão de `reclaimStaleSyncingItems` em `queue.ts`. */
+export function assertQueueableSubmission(submission: RondaSubmission): void {
+  const missing = findingsWithMissingFields(submission.achados);
+  if (missing.length > 0) throw new RondaQueueValidationError(missing);
+}
+
 export async function enqueueRonda(submission: RondaSubmission): Promise<QueueItem> {
+  assertQueueableSubmission(submission);
   const item: QueueItem = {
     localId: newLocalId(),
     submission,
@@ -272,6 +298,7 @@ export async function getQueueItem(localId: string): Promise<QueueItem | null> {
  * mantê-lo faria a tela acusar um problema que a edição pode ter resolvido.
  */
 export async function updateQueueSubmission(localId: string, submission: RondaSubmission): Promise<void> {
+  assertQueueableSubmission(submission);
   await updateQueueItem(localId, { submission, status: "pending", lastError: undefined, issues: undefined });
 }
 

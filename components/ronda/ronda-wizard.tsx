@@ -9,12 +9,10 @@ import {
   metadataComplete,
   pendingFindings,
   findingsWithMissingFields,
-  findingTitle,
   newFinding,
   duplicateFinding,
   diffSuggestionFields,
   FLAG_LABELS,
-  MISSING_FIELD_LABELS,
   type RondaMetadata,
   type RondaFinding,
   type RondaClosing,
@@ -25,18 +23,14 @@ import {
 import { getFlags, getSugestoes, postCorrecaoSugestao, RondaSubmitError } from "@/lib/ronda/api-client";
 import { enqueueRonda, loadDraft, saveDraft, clearDraft } from "@/lib/ronda/db";
 import { promoteEmbeddedPhotos } from "@/lib/ronda/foto-upload";
+import { scrollToField } from "@/lib/ronda/field-anchor";
 import { useRondaQueue } from "@/lib/ronda/use-ronda-queue";
 import { QueueStatusBar } from "./queue-status-bar";
 import { FindingCard } from "./finding-card";
+import { MissingFieldsNotice } from "./missing-fields-notice";
 import { ThemeToggle } from "./theme-toggle";
 
 type Step = "A" | "B" | "C" | "done";
-
-/** "departamento e descrição" / "departamento, classificação e descrição" — nomeia os campos por extenso, nunca uma contagem (a mesma exigência que levou este aviso a existir). */
-function formatFieldList(labels: string[]): string {
-  if (labels.length <= 1) return labels.join("");
-  return `${labels.slice(0, -1).join(", ")} e ${labels[labels.length - 1]}`;
-}
 
 /**
  * Etapa B (achado dinâmico — revisão de arquitetura, Decisões 1-3): a
@@ -162,6 +156,7 @@ export function RondaWizard() {
 
   const pending = useMemo(() => pendingFindings(findings), [findings]);
   const missingFieldsList = useMemo(() => findingsWithMissingFields(findings), [findings]);
+  const totalMissingFields = useMemo(() => missingFieldsList.reduce((sum, entry) => sum + entry.missing.length, 0), [missingFieldsList]);
   const canConclude = pending.length === 0 && missingFieldsList.length === 0;
 
   /**
@@ -491,22 +486,12 @@ export function RondaWizard() {
               Incluir gráfico-resumo no relatório
             </label>
 
-            {!canConclude && (
+            {pending.length > 0 && (
               <div className="rounded border border-amber-400/40 bg-amber-400/40 p-3 text-xs text-amber-900 dark:bg-amber-400/10 dark:text-amber-300">
-                {pending.length > 0 && (
-                  <p className="mb-1 font-medium">Ainda há {pending.length} achado(s) marcado(s) como &quot;não avaliado&quot; — revise antes de concluir.</p>
-                )}
-                {missingFieldsList.length > 0 && (
-                  <ul className="list-disc space-y-0.5 pl-4">
-                    {missingFieldsList.map(({ finding, missing }) => (
-                      <li key={finding.id}>
-                        {findingTitle(finding)} — falta {formatFieldList(missing.map((field) => MISSING_FIELD_LABELS[field]))}
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <p className="font-medium">Ainda há {pending.length} achado(s) marcado(s) como &quot;não avaliado&quot; — revise antes de concluir.</p>
               </div>
             )}
+            {missingFieldsList.length > 0 && <MissingFieldsNotice missingFieldsList={missingFieldsList} onNavigate={() => setStep("B")} />}
           </div>
         )}
 
@@ -553,11 +538,26 @@ export function RondaWizard() {
           {step === "C" && (
             <button
               type="button"
-              disabled={!canConclude}
-              onClick={() => void handleConclude()}
-              className="rounded bg-emerald-500 px-4 py-2 text-sm font-medium text-black disabled:opacity-40"
+              aria-disabled={!canConclude}
+              onClick={() => {
+                if (!canConclude) {
+                  // `aria-disabled`, não `disabled`: em campo, com luva, um
+                  // botão morto não explica nada — o toque vira a resposta.
+                  // Prioriza campo faltando (tem alvo pra rolar); "não
+                  // avaliado" sozinho só leva de volta pra Etapa B, sem
+                  // achado específico pra focar (fora do escopo deste gate).
+                  const first = missingFieldsList[0];
+                  setStep("B");
+                  if (first) {
+                    requestAnimationFrame(() => requestAnimationFrame(() => scrollToField(first.finding.id, first.missing[0])));
+                  }
+                  return;
+                }
+                void handleConclude();
+              }}
+              className={`rounded px-4 py-2 text-sm font-medium text-black transition-opacity ${canConclude ? "bg-emerald-500" : "bg-emerald-500/50"}`}
             >
-              Concluir LUNA Safety Walk
+              {canConclude ? "Concluir LUNA Safety Walk" : totalMissingFields > 0 ? `Faltam ${totalMissingFields} campo${totalMissingFields === 1 ? "" : "s"}` : "Avalie os achados pendentes"}
             </button>
           )}
         </footer>
