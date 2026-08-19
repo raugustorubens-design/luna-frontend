@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getRonda, patchRonda, RondaSubmitError } from "@/lib/ronda/api-client";
+import { baixarRelatorioRonda, gerarRelatorioRonda, getRonda, patchRonda, RondaSubmitError } from "@/lib/ronda/api-client";
 import { deleteQueueItem, getQueueItem, updateQueueSubmission, type QueueStatus } from "@/lib/ronda/db";
 import { trySyncPendingRondas } from "@/lib/ronda/queue";
 import { duplicateFinding, findingsWithMissingFields, type RondaFinding, type RondaMetadata } from "@/lib/ronda/types";
@@ -50,6 +50,8 @@ function Editor({ source }: { source: EditorSource }) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [generatingRelatorio, setGeneratingRelatorio] = useState(false);
+  const [relatorioError, setRelatorioError] = useState<string | null>(null);
 
   const isQueue = source.kind === "queue";
 
@@ -162,6 +164,34 @@ function Editor({ source }: { source: EditorSource }) {
     if (!window.confirm("Descartar esta ronda deste aparelho? Ela ainda não foi enviada, então não há como recuperá-la depois.")) return;
     await deleteQueueItem(source.localId);
     router.push("/ronda/historico");
+  }
+
+  /**
+   * Item 3 do Plano (2026-08-19) — modelo "Detalhado", único que existe
+   * nesta etapa, hardcoded (sem seletor de modelo enquanto "Visual" não
+   * existir no backend). Só chamável em `source.kind === "server"`: uma
+   * ronda ainda na fila local não tem `rondaId` confirmado pelo servidor
+   * para gerar relatório a partir dele — regra do desenho ("nunca gerar de
+   * ronda pendente na fila"), reforçada aqui e não só escondendo o botão.
+   */
+  async function handleGerarRelatorio() {
+    if (source.kind !== "server") return;
+    setGeneratingRelatorio(true);
+    setRelatorioError(null);
+    try {
+      const relatorio = await gerarRelatorioRonda(source.rondaId);
+      const arquivo = await baixarRelatorioRonda(relatorio.relatorioId);
+      const url = URL.createObjectURL(arquivo.blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = arquivo.filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setRelatorioError(err instanceof RondaSubmitError ? err.message : "Falha ao gerar o relatório.");
+    } finally {
+      setGeneratingRelatorio(false);
+    }
   }
 
   if (loadError) {
@@ -278,6 +308,19 @@ function Editor({ source }: { source: EditorSource }) {
       </main>
 
       <footer className="ronda-chrome-bottom shrink-0 border-t border-black/10 px-4 py-3 dark:border-[rgba(112,136,160,0.16)]">
+        {!isQueue && (
+          <div className="mb-2 flex flex-col gap-1">
+            <button
+              type="button"
+              disabled={generatingRelatorio}
+              onClick={() => void handleGerarRelatorio()}
+              className="w-full rounded border border-[#003C90] px-4 py-2 text-sm font-medium text-[#003C90] transition-opacity disabled:opacity-40 dark:border-[#A0B8C8] dark:text-[#A0B8C8]"
+            >
+              {generatingRelatorio ? "Gerando relatório…" : "Gerar relatório"}
+            </button>
+            {relatorioError && <p className="text-xs text-red-400">{relatorioError}</p>}
+          </div>
+        )}
         {/*
           `aria-disabled`, não `disabled`, quando falta campo — mesmo
           motivo do botão "Concluir" do wizard: em campo, o toque precisa
