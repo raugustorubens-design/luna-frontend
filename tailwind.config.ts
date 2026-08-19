@@ -48,6 +48,14 @@ export default {
           secondary: "#0B1020",
           panel: "#111827",
           border: "#1F2937",
+          // Pacote "tirar o roxo do site" (GENESIS/pacotes/2026-08-19-tirar-
+          // o-roxo.md, Etapa 1, 19/08/2026) — token LEGADO do Modo Usuário
+          // v1. Matiz 255°ish, fora do portão instituído pela mesma etapa
+          // (200°-220° ou 17°-55°, ver `scripts/hue-gate.mjs`). NÃO REMOVER:
+          // `hero.tsx` e `cognitive-session-modal.tsx` (ambos v1, fora do
+          // escopo deste pacote) ainda usam `bg-luna-violet`/`shadow-aura`.
+          // Proibido em superfície nova — `components/site/**` e os arquivos
+          // `*-v2` do Forge são travados pelo portão de matiz em teste.
           violet: "#7C3AED",
           violetMid: "#8B5CF6",
           violetGlow: "#A78BFA",
@@ -100,7 +108,28 @@ export default {
           // Midnight, não branco: branco sobre #E8A33D mede 2,16:1 e reprova
           // AA. Ver a medição registrada em `finding-card.tsx`.
           onWarn: "#1E2761",
-          onFail: "#FFFFFF"
+          onFail: "#FFFFFF",
+
+          // Pacote "tirar o roxo do site" (GENESIS/pacotes/2026-08-19-tirar-
+          // o-roxo.md, Etapa 3, 19/08/2026) — rampa do Padrão SMX de Cores
+          // (`GENESIS/padroes/PADRAO-SMX-CORES.md`, ADR-024), só acréscimo:
+          // nenhuma chave acima sai. Consumida pela inversão de hierarquia
+          // de superfície em `app/globals.css` e por qualquer componente
+          // novo que precise do valor bruto (ex.: `stroke`/`fill` de SVG).
+          void: "#000206",
+          str1: "#001428",
+          str2: "#001E3C",
+          str3: "#0A283C",
+          str4: "#143A5A",
+          glow1: "#3068A0",
+          glow2: "#5A7896",
+          glow3: "#7088A0",
+          glow4: "#8098B0",
+          glow5: "#A0B8C8",
+          spec: "#F8F8F8",
+          warm3: "#C09030",
+          warm4: "#E4B448",
+          warm5: "#F8E8A0"
         }
       },
       borderRadius: {

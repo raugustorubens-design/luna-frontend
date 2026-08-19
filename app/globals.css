@@ -441,3 +441,48 @@ body {
 
   --luna-cyan: 189 94% 43%;
 }
+
+/* ===========================================================================
+ * Pacote "tirar o roxo do site" (GENESIS/pacotes/2026-08-19-tirar-o-roxo.md,
+ * Etapa 2), 19/08/2026 — inversão da hierarquia de superfície do Modo
+ * Usuário v2/Forge v2, para o Padrão SMX de Cores
+ * (`GENESIS/padroes/PADRAO-SMX-CORES.md`, ADR-024).
+ *
+ * Bloco ADITIVO, no mesmo padrão da religação acima: nada é removido, cada
+ * linha traz o valor anterior comentado ao lado. Reverter = apagar este
+ * bloco inteiro.
+ *
+ * Motivo: Midnight (`#1E2761`, matiz 232°) cobrindo a página inteira em
+ * `/v2`, com 69% de saturação, lia como roxo — 17° fora do azul da logo SMX
+ * (215°). O Midnight não sai do sistema, só muda de papel: deixa de ser o
+ * fundo da página e passa a ser a superfície que emerge dela (cartão,
+ * painel), exatamente como as quatro faixas "Material" do padrão de cores
+ * preveem. Continua idêntico no `themeColor` do PWA (`app/ronda/layout.tsx`)
+ * e no texto sobre âmbar — nenhum dos dois é tocado aqui.
+ *
+ * Escopo: só o tema escuro (`:root`, o padrão do produto). O tema claro
+ * (`[data-theme="light"]`, bloco acima) não muda nesta etapa — o pacote não
+ * pediu, e o fundo `--luna-paper` já está dentro do portão de matiz por não
+ * ter matiz relevante (quase branco).
+ * ======================================================================== */
+:root {
+  --luna-bg: #000206; /* era: var(--luna-midnight) — #1E2761 */
+  /* Degradê do herói invertido: Midnight no topo (onde a marca ainda
+     aparece), quase preto no fim — antes era o oposto (ink quase preto no
+     topo, Midnight sólido no fim, e Midnight seguia sendo o fundo da página
+     inteira depois do herói). */
+  --luna-bg-image: linear-gradient(180deg, var(--luna-midnight) 0%, #000206 100%); /* era: linear-gradient(180deg, var(--luna-ink) 0%, var(--luna-midnight) 100%) */
+  /* Superfície deixa de ser branco translúcido e passa a ser Midnight
+     translúcido — a família de matiz do sistema inteiro fica só em azul,
+     nunca em cinza neutro (Padrão SMX de Cores §8). */
+  --luna-surface: rgba(30, 39, 97, 0.38); /* era: rgba(255, 255, 255, 0.03) */
+  --luna-surface-2: rgba(30, 39, 97, 0.55); /* era: rgba(255, 255, 255, 0.06) */
+  --luna-surface-3: rgba(30, 39, 97, 0.78); /* era: rgba(255, 255, 255, 0.09) */
+  /* Linhas derivam de `glow-3` (#7088A0) em opacidade, não de branco — é o
+     que as mantém dentro da família de matiz em vez de introduzir cinza. */
+  --luna-line: rgba(112, 136, 160, 0.16); /* era: rgba(255, 255, 255, 0.1) */
+  --luna-line-2: rgba(112, 136, 160, 0.28); /* era: rgba(255, 255, 255, 0.15) */
+  --luna-line-3: rgba(112, 136, 160, 0.46); /* era: rgba(255, 255, 255, 0.25) */
+  --luna-text: #dce6f2; /* era: var(--luna-paper) — #F4F6FB. Sobre quase preto, branco quase puro cintila. */
+  --luna-accent: #a0b8c8; /* era: #22d3ee — matiz 188°, 27° fora da faixa azul. #A0B8C8 é o tom em que o holograma aparece nas três imagens de referência, 10:1 de contraste sobre #000206. */
+}
