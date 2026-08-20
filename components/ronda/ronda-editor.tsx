@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { baixarRelatorioRonda, gerarRelatorioRonda, getRonda, patchRonda, RondaSubmitError } from "@/lib/ronda/api-client";
+import { getRonda, patchRonda, RondaSubmitError } from "@/lib/ronda/api-client";
 import { deleteQueueItem, getQueueItem, updateQueueSubmission, type QueueStatus } from "@/lib/ronda/db";
 import { trySyncPendingRondas } from "@/lib/ronda/queue";
 import { duplicateFinding, findingsWithMissingFields, type RondaFinding, type RondaMetadata } from "@/lib/ronda/types";
@@ -50,25 +50,6 @@ function Editor({ source }: { source: EditorSource }) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [generatingRelatorio, setGeneratingRelatorio] = useState(false);
-  const [relatorioError, setRelatorioError] = useState<string | null>(null);
-  const [relatorioWarnings, setRelatorioWarnings] = useState<string[] | null>(null);
-  const [formato, setFormato] = useState<"pptx" | "xlsx" | "docx">("pptx");
-  const [orientacao, setOrientacao] = useState<"retrato" | "paisagem">("paisagem");
-  const [papel, setPapel] = useState<"a4" | "oficio" | "carta">("a4");
-  const orientacaoTocada = useRef(false);
-
-  function handleFormatoChange(next: "pptx" | "xlsx" | "docx") {
-    setFormato(next);
-    if (!orientacaoTocada.current) {
-      setOrientacao(next === "docx" ? "retrato" : "paisagem");
-    }
-  }
-
-  function handleOrientacaoChange(next: "retrato" | "paisagem") {
-    orientacaoTocada.current = true;
-    setOrientacao(next);
-  }
 
   const isQueue = source.kind === "queue";
 
@@ -181,36 +162,6 @@ function Editor({ source }: { source: EditorSource }) {
     if (!window.confirm("Descartar esta ronda deste aparelho? Ela ainda não foi enviada, então não há como recuperá-la depois.")) return;
     await deleteQueueItem(source.localId);
     router.push("/ronda/historico");
-  }
-
-  /**
-   * Item 3 do Plano (2026-08-19) — modelo "Detalhado", único que existe
-   * nesta etapa, hardcoded (sem seletor de modelo enquanto "Visual" não
-   * existir no backend). Só chamável em `source.kind === "server"`: uma
-   * ronda ainda na fila local não tem `rondaId` confirmado pelo servidor
-   * para gerar relatório a partir dele — regra do desenho ("nunca gerar de
-   * ronda pendente na fila"), reforçada aqui e não só escondendo o botão.
-   */
-  async function handleGerarRelatorio() {
-    if (source.kind !== "server") return;
-    setGeneratingRelatorio(true);
-    setRelatorioError(null);
-    setRelatorioWarnings(null);
-    try {
-      const { relatorio, warnings } = await gerarRelatorioRonda(source.rondaId, formato, orientacao, papel);
-      const arquivo = await baixarRelatorioRonda(relatorio.relatorioId);
-      const url = URL.createObjectURL(arquivo.blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = arquivo.filename;
-      link.click();
-      URL.revokeObjectURL(url);
-      if (warnings && warnings.length > 0) setRelatorioWarnings(warnings);
-    } catch (err) {
-      setRelatorioError(err instanceof RondaSubmitError ? err.message : "Falha ao gerar o relatório.");
-    } finally {
-      setGeneratingRelatorio(false);
-    }
   }
 
   if (loadError) {
@@ -327,61 +278,26 @@ function Editor({ source }: { source: EditorSource }) {
       </main>
 
       <footer className="ronda-chrome-bottom shrink-0 border-t border-black/10 px-4 py-3 dark:border-[rgba(112,136,160,0.16)]">
-        {!isQueue && (
-          <div className="mb-2 flex flex-col gap-2">
-            <div className="grid grid-cols-3 gap-2">
-              <label className="flex flex-col gap-1 text-[11px] text-[#6B7C99] dark:text-[#5A6E8A]">
-                Formato
-                <select
-                  value={formato}
-                  onChange={(event) => handleFormatoChange(event.target.value as "pptx" | "xlsx" | "docx")}
-                  className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-xs text-[#0A1B3D] [color-scheme:dark] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2] dark:[color-scheme:light]"
-                >
-                  <option value="pptx">PPTX</option>
-                  <option value="xlsx">XLSX</option>
-                  <option value="docx">DOCX</option>
-                </select>
-              </label>
-              <label className="flex flex-col gap-1 text-[11px] text-[#6B7C99] dark:text-[#5A6E8A]">
-                Orientação
-                <select
-                  value={orientacao}
-                  onChange={(event) => handleOrientacaoChange(event.target.value as "retrato" | "paisagem")}
-                  className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-xs text-[#0A1B3D] [color-scheme:dark] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2] dark:[color-scheme:light]"
-                >
-                  <option value="retrato">Retrato</option>
-                  <option value="paisagem">Paisagem</option>
-                </select>
-              </label>
-              <label className="flex flex-col gap-1 text-[11px] text-[#6B7C99] dark:text-[#5A6E8A]">
-                Papel
-                <select
-                  value={papel}
-                  onChange={(event) => setPapel(event.target.value as "a4" | "oficio" | "carta")}
-                  className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-xs text-[#0A1B3D] [color-scheme:dark] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2] dark:[color-scheme:light]"
-                >
-                  <option value="a4">A4</option>
-                  <option value="oficio">Ofício</option>
-                  <option value="carta">Carta</option>
-                </select>
-              </label>
-            </div>
+        {/*
+          Item 2 da fila (curadoria) — o botão não gera mais direto daqui:
+          leva pra tela de curadoria primeiro (editar/excluir achado), que é
+          quem gera de fato — inclusive a escolha de formato/orientação/
+          papel (Etapa 1 de `2026-08-19-saida-formato-e-pagina.md`), que
+          mora lá agora, não aqui. Regra do desenho ("a ronda não muda, o
+          relatório carrega a versão curada") só é respeitada se gerar
+          sempre passar por ali. Só em `source.kind === "server"`: uma ronda
+          ainda na fila local não tem `rondaId` confirmado pelo servidor
+          para gerar relatório a partir dele.
+        */}
+        {source.kind === "server" && (
+          <div className="mb-2">
             <button
               type="button"
-              disabled={generatingRelatorio}
-              onClick={() => void handleGerarRelatorio()}
-              className="w-full rounded border border-[#003C90] px-4 py-2 text-sm font-medium text-[#003C90] transition-opacity disabled:opacity-40 dark:border-[#A0B8C8] dark:text-[#A0B8C8]"
+              onClick={() => router.push(`/ronda/historico/${source.rondaId}/curadoria`)}
+              className="w-full rounded border border-[#003C90] px-4 py-2 text-sm font-medium text-[#003C90] transition-opacity dark:border-[#A0B8C8] dark:text-[#A0B8C8]"
             >
-              {generatingRelatorio ? "Gerando relatório…" : "Gerar relatório"}
+              Gerar relatório
             </button>
-            {relatorioError && <p className="text-xs text-red-400">{relatorioError}</p>}
-            {relatorioWarnings && relatorioWarnings.length > 0 && (
-              <div className="rounded border border-amber-400/60 bg-amber-400/10 p-2 text-[11px] text-amber-800 dark:text-amber-300">
-                {relatorioWarnings.map((warning, index) => (
-                  <p key={index}>{warning}</p>
-                ))}
-              </div>
-            )}
           </div>
         )}
         {/*

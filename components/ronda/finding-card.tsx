@@ -49,7 +49,7 @@ import {
  * Fundo mantido exato (cor de marca, do protótipo), corrigido só o texto.
  * Positivo/Não Conformidade continuam com texto branco — já passam AA.
  */
-const CLASSIFICATION_FILL_CLASS: Record<FindingClassification, string> = {
+export const CLASSIFICATION_FILL_CLASS: Record<FindingClassification, string> = {
   positivo: "border-transparent bg-[#2E7D32] text-white",
   atencao: "border-transparent bg-[#E8A33D] text-[#1E2761]",
   nao_conformidade: "border-transparent bg-[#C62828] text-white",
