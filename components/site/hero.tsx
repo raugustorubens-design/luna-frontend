@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Smartphone } from "lucide-react";
 import { SITE_CLASSIFICATION_BAR, type SiteClassification } from "@/lib/site/classification";
+import { LunaCore } from "@/components/site/luna-core";
 
 /**
  * Faixa condensada do razão, no rodapé do hero: quatro leituras, cada uma
@@ -30,7 +31,14 @@ export function Hero() {
     <section className="relative overflow-hidden border-b border-[var(--luna-line)] bg-[image:var(--luna-bg-image)]">
       <div className="luna-grid pointer-events-none absolute inset-0" aria-hidden="true" />
 
-      <div className="relative mx-auto w-full max-w-[1240px] px-[var(--luna-pad)] pt-[clamp(3.5rem,9vw,6.5rem)]">
+      {/* Plano de fundo, atrás do texto — opacidade baixa e degradê de
+          fusão de propósito, pra não competir com o headline/CTA. */}
+      <LunaCore
+        aria-hidden="true"
+        className="pointer-events-none absolute right-[clamp(-4rem,-2vw,1rem)] top-1/2 z-0 aspect-[1402/1122] w-[min(46vw,640px)] -translate-y-1/2 opacity-50 [mask-image:linear-gradient(to_left,black_68%,transparent_100%)] max-md:right-1/2 max-md:top-[46%] max-md:w-[min(120vw,720px)] max-md:translate-x-1/2 max-md:opacity-25"
+      />
+
+      <div className="relative z-[1] mx-auto w-full max-w-[1240px] px-[var(--luna-pad)] pt-[clamp(3.5rem,9vw,6.5rem)]">
         <p className="luna-reveal font-[family-name:var(--luna-mono)] text-[0.6875rem] font-medium uppercase tracking-[0.14em] text-[var(--luna-text-3)]">
           Sistema cognitivo persistente · operando em produção
         </p>

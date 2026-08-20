@@ -217,6 +217,11 @@ export interface RondaRelatorioSummary {
   expiresAt: string;
 }
 
+export interface RondaRelatorioResult {
+  relatorio: RondaRelatorioSummary;
+  warnings?: string[];
+}
+
 export interface RondaRelatorioArquivo {
   blob: Blob;
   filename: string;
@@ -229,12 +234,24 @@ export interface RondaRelatorioArquivo {
  * isto para uma ronda já confirmada pelo servidor (`kind: "server"` em
  * `list-view.ts`) — uma ronda ainda na fila local não tem `rondaId` real
  * pra gerar relatório a partir dele.
+ *
+ * `formato`/`orientacao`/`papel` (luna-core, suporte a PPTX/XLSX/DOCX,
+ * orientação e papel configuráveis): `formato` default `"pptx"` no backend
+ * se omitido, `orientacao` opcional (o backend escolhe pelo `formato`),
+ * `papel` opcional com default `"a4"`. A resposta pode trazer `warnings` —
+ * limitação conhecida da combinação formato/papel escolhida, não impede a
+ * geração do relatório.
  */
-export async function gerarRelatorioRonda(rondaId: string): Promise<RondaRelatorioSummary> {
+export async function gerarRelatorioRonda(
+  rondaId: string,
+  formato: "pptx" | "xlsx" | "docx",
+  orientacao?: "retrato" | "paisagem",
+  papel?: "a4" | "oficio" | "carta",
+): Promise<RondaRelatorioResult> {
   const response = await fetch(`${LUNA_GATEWAY_BASE_URL}/convergia/ronda/${encodeURIComponent(rondaId)}/relatorio`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ modelo: "detalhado", formato: "docx" }),
+    body: JSON.stringify({ modelo: "detalhado", formato, orientacao, papel }),
   });
 
   if (!response.ok) {
@@ -243,7 +260,7 @@ export async function gerarRelatorioRonda(rondaId: string): Promise<RondaRelator
   }
 
   const body = await response.json();
-  return body.relatorio as RondaRelatorioSummary;
+  return { relatorio: body.relatorio as RondaRelatorioSummary, warnings: body.warnings as string[] | undefined };
 }
 
 /** `GET /convergia/ronda/relatorio/:relatorioId` — bytes do relatório já gerado, enquanto não passar dos 7 dias de retenção (`RelatorioStore`). Mesmo padrão de `transformConvergiaFile` (lib/forge/api-client.ts): lê o nome do arquivo do Content-Disposition, devolve o blob pronto pra download. */
