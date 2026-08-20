@@ -51,5 +51,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         isAllowedEmail(user.email, process.env.RONDA_ALLOWED_EMAILS)
       );
     },
+    /**
+     * `2026-08-20-devolver-acesso.md`, Etapa 2 / `2026-08-20-tres-correcoes.md`
+     * §1. `middleware.ts` monta `callbackUrl` apontando pra onde a pessoa
+     * estava (`/ronda`, `/forge?...`) antes de mandar pro login — sem este
+     * callback, o Auth.js ignora esse `callbackUrl` e devolve sempre
+     * `baseUrl`, então todo login cai na raiz em vez de voltar pra onde a
+     * pessoa tentava entrar.
+     */
+    async redirect({ url, baseUrl }) {
+      if (url.startsWith("/")) return `${baseUrl}${url}`;
+      try {
+        // Mesma origem → o próprio endereço. Origem diferente → `baseUrl`:
+        // sem isto, um `callbackUrl` forjado apontando pra fora vira
+        // redirecionamento aberto.
+        if (new URL(url).origin === baseUrl) return url;
+      } catch {
+        // `callbackUrl` malformado — cai no default abaixo.
+      }
+      return baseUrl;
+    },
   },
 });
