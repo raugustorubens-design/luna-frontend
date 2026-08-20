@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { baixarRelatorioRonda, gerarRelatorioRonda, getRonda, patchRonda, RondaSubmitError } from "@/lib/ronda/api-client";
 import { deleteQueueItem, getQueueItem, updateQueueSubmission, type QueueStatus } from "@/lib/ronda/db";
@@ -52,6 +52,23 @@ function Editor({ source }: { source: EditorSource }) {
   const [saved, setSaved] = useState(false);
   const [generatingRelatorio, setGeneratingRelatorio] = useState(false);
   const [relatorioError, setRelatorioError] = useState<string | null>(null);
+  const [relatorioWarnings, setRelatorioWarnings] = useState<string[] | null>(null);
+  const [formato, setFormato] = useState<"pptx" | "xlsx" | "docx">("pptx");
+  const [orientacao, setOrientacao] = useState<"retrato" | "paisagem">("paisagem");
+  const [papel, setPapel] = useState<"a4" | "oficio" | "carta">("a4");
+  const orientacaoTocada = useRef(false);
+
+  function handleFormatoChange(next: "pptx" | "xlsx" | "docx") {
+    setFormato(next);
+    if (!orientacaoTocada.current) {
+      setOrientacao(next === "docx" ? "retrato" : "paisagem");
+    }
+  }
+
+  function handleOrientacaoChange(next: "retrato" | "paisagem") {
+    orientacaoTocada.current = true;
+    setOrientacao(next);
+  }
 
   const isQueue = source.kind === "queue";
 
@@ -178,8 +195,9 @@ function Editor({ source }: { source: EditorSource }) {
     if (source.kind !== "server") return;
     setGeneratingRelatorio(true);
     setRelatorioError(null);
+    setRelatorioWarnings(null);
     try {
-      const relatorio = await gerarRelatorioRonda(source.rondaId);
+      const { relatorio, warnings } = await gerarRelatorioRonda(source.rondaId, formato, orientacao, papel);
       const arquivo = await baixarRelatorioRonda(relatorio.relatorioId);
       const url = URL.createObjectURL(arquivo.blob);
       const link = document.createElement("a");
@@ -187,6 +205,7 @@ function Editor({ source }: { source: EditorSource }) {
       link.download = arquivo.filename;
       link.click();
       URL.revokeObjectURL(url);
+      if (warnings && warnings.length > 0) setRelatorioWarnings(warnings);
     } catch (err) {
       setRelatorioError(err instanceof RondaSubmitError ? err.message : "Falha ao gerar o relatório.");
     } finally {
@@ -309,7 +328,44 @@ function Editor({ source }: { source: EditorSource }) {
 
       <footer className="ronda-chrome-bottom shrink-0 border-t border-black/10 px-4 py-3 dark:border-[rgba(112,136,160,0.16)]">
         {!isQueue && (
-          <div className="mb-2 flex flex-col gap-1">
+          <div className="mb-2 flex flex-col gap-2">
+            <div className="grid grid-cols-3 gap-2">
+              <label className="flex flex-col gap-1 text-[11px] text-[#6B7C99] dark:text-[#5A6E8A]">
+                Formato
+                <select
+                  value={formato}
+                  onChange={(event) => handleFormatoChange(event.target.value as "pptx" | "xlsx" | "docx")}
+                  className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-xs text-[#0A1B3D] [color-scheme:dark] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2] dark:[color-scheme:light]"
+                >
+                  <option value="pptx">PPTX</option>
+                  <option value="xlsx">XLSX</option>
+                  <option value="docx">DOCX</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] text-[#6B7C99] dark:text-[#5A6E8A]">
+                Orientação
+                <select
+                  value={orientacao}
+                  onChange={(event) => handleOrientacaoChange(event.target.value as "retrato" | "paisagem")}
+                  className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-xs text-[#0A1B3D] [color-scheme:dark] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2] dark:[color-scheme:light]"
+                >
+                  <option value="retrato">Retrato</option>
+                  <option value="paisagem">Paisagem</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] text-[#6B7C99] dark:text-[#5A6E8A]">
+                Papel
+                <select
+                  value={papel}
+                  onChange={(event) => setPapel(event.target.value as "a4" | "oficio" | "carta")}
+                  className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-xs text-[#0A1B3D] [color-scheme:dark] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2] dark:[color-scheme:light]"
+                >
+                  <option value="a4">A4</option>
+                  <option value="oficio">Ofício</option>
+                  <option value="carta">Carta</option>
+                </select>
+              </label>
+            </div>
             <button
               type="button"
               disabled={generatingRelatorio}
@@ -319,6 +375,13 @@ function Editor({ source }: { source: EditorSource }) {
               {generatingRelatorio ? "Gerando relatório…" : "Gerar relatório"}
             </button>
             {relatorioError && <p className="text-xs text-red-400">{relatorioError}</p>}
+            {relatorioWarnings && relatorioWarnings.length > 0 && (
+              <div className="rounded border border-amber-400/60 bg-amber-400/10 p-2 text-[11px] text-amber-800 dark:text-amber-300">
+                {relatorioWarnings.map((warning, index) => (
+                  <p key={index}>{warning}</p>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {/*
