@@ -34,7 +34,19 @@ export default auth((req) => {
 
   const path = req.nextUrl.pathname;
   const isForgeArea = path.startsWith("/forge") || path.startsWith("/api/forge");
-  const allowedEmails = isForgeArea ? process.env.FORGE_ALLOWED_EMAIL : process.env.RONDA_ALLOWED_EMAILS;
+  /**
+   * `2026-08-20-devolver-acesso.md`, Etapa 1: quando `RONDA_ALLOWED_EMAILS`
+   * não está definida no ambiente, recai em `FORGE_ALLOWED_EMAIL` — falhar
+   * fechado por variável ausente protege contra estranho, mas tranca o
+   * dono, e numa ferramenta operada por uma pessoa isso é perda de acesso
+   * ao trabalho de campo, não segurança. Não é afrouxar: continua fechado
+   * pra quem não está em lista nenhuma. Só `=== undefined` ativa a
+   * recaída — assim que a variável existir (mesmo vazia por engano), ela
+   * manda sozinha, e os técnicos entram sem precisar do e-mail do Forge.
+   */
+  const allowedEmails = isForgeArea
+    ? process.env.FORGE_ALLOWED_EMAIL
+    : (process.env.RONDA_ALLOWED_EMAILS ?? process.env.FORGE_ALLOWED_EMAIL);
 
   if (isAllowedEmail(req.auth?.user?.email, allowedEmails)) return;
 
