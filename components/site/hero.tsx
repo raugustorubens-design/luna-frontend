@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Smartphone } from "lucide-react";
 import { SITE_CLASSIFICATION_BAR, type SiteClassification } from "@/lib/site/classification";
-import { LunaCore } from "@/components/site/luna-core";
+import { LunaHeroVisual } from "@/components/site/luna-hero-visual";
 
 /**
  * Faixa condensada do razão, no rodapé do hero: quatro leituras, cada uma
@@ -21,79 +21,80 @@ const STRIP: { name: string; note: string; classification: SiteClassification }[
 ];
 
 /**
- * O degradê vive só no hero, pelo mesmo motivo que em `/ronda`: a faixa mais
- * escura fica onde a densidade de texto é maior. Abaixo do hero a página
- * assenta na cor sólida — esticar o degradê por uma página inteira
- * descaracteriza a identidade em vez de padronizá-la.
+ * GENESIS/pacotes/2026-08-20-hero-luna-espaco.md — cena sempre escura (ver
+ * nota em `app/globals.css`, `.luna-hero-*`), LUNA inteira e centralizada
+ * na primeira tela, frase abaixo dela, fundo de espaço sem quadriculado.
+ * Substitui o layout anterior (LUNA como plano de fundo à direita,
+ * `LunaCore` com órbita) — pré-resposta do próprio pacote: sinapses+disco
+ * bastam quando a órbita não cabe no orçamento de luz do novo desenho.
  */
 export function Hero() {
   return (
-    <section className="relative overflow-hidden border-b border-[var(--luna-line)] bg-[image:var(--luna-bg-image)]">
-      <div className="luna-grid pointer-events-none absolute inset-0" aria-hidden="true" />
+    <section
+      id="palco"
+      className="relative isolate flex min-h-[calc(100svh-3.6rem)] flex-col items-center justify-center overflow-hidden bg-[#000206] px-[clamp(1.25rem,5vw,3rem)] pb-[clamp(2.5rem,7vw,4rem)] pt-[clamp(1rem,4vw,2rem)] text-[#DCE6F2]"
+    >
+      <LunaHeroVisual />
 
-      {/* Plano de fundo, atrás do texto — opacidade baixa e degradê de
-          fusão de propósito, pra não competir com o headline/CTA. */}
-      <LunaCore
-        aria-hidden="true"
-        className="pointer-events-none absolute right-[clamp(-4rem,-2vw,1rem)] top-1/2 z-0 aspect-[1402/1122] w-[min(46vw,640px)] -translate-y-1/2 opacity-50 [mask-image:linear-gradient(to_left,black_68%,transparent_100%)] max-md:right-1/2 max-md:top-[46%] max-md:w-[min(120vw,720px)] max-md:translate-x-1/2 max-md:opacity-25"
-      />
-
-      <div className="relative z-[1] mx-auto w-full max-w-[1240px] px-[var(--luna-pad)] pt-[clamp(3.5rem,9vw,6.5rem)]">
-        <p className="luna-reveal font-[family-name:var(--luna-mono)] text-[0.6875rem] font-medium uppercase tracking-[0.14em] text-[var(--luna-text-3)]">
-          Sistema cognitivo persistente · operando em produção
+      <div className="luna-reveal relative z-[3] mt-[clamp(1.5rem,4vw,2.5rem)] max-w-[24ch] text-center">
+        <p className="font-[family-name:var(--luna-mono)] text-[0.62rem] uppercase tracking-[0.2em] text-[rgba(220,230,242,0.42)]">
+          Sistema cognitivo persistente
         </p>
 
-        <h1 className="luna-reveal mt-5 max-w-[16ch] text-[length:var(--luna-step-4)] font-extrabold">
-          Nada do que foi
-          <br />
-          decidido <em className="not-italic text-[var(--luna-text-3)]">se perde.</em>
+        <h1 className="mt-4 text-balance font-[family-name:var(--luna-display)] text-[clamp(2rem,8.5vw,3.6rem)] font-extrabold leading-[1.02] tracking-[-0.025em]">
+          Nada do que foi decidido{" "}
+          <em className="not-italic text-[#8098B0]">se perde.</em>
         </h1>
 
-        <p className="luna-reveal mt-7 max-w-[58ch] text-[length:var(--luna-step-1)] leading-[1.55] text-[var(--luna-text-2)]">
-          A LUNA guarda decisões, reconstrói o contexto de onde parou e opera três frentes de
+        <p className="mx-auto mt-5 max-w-[44ch] text-[clamp(0.9rem,3.4vw,1rem)] leading-[1.62] text-[rgba(220,230,242,0.66)]">
+          Ela guarda decisões, reconstrói o contexto de onde parou, e opera três frentes de
           trabalho real: geração de documentos de segurança do trabalho, ronda de inspeção no
           celular e o ambiente de engenharia onde ela própria é construída.
         </p>
 
-        <div className="luna-reveal mt-9 flex flex-wrap gap-3">
+        <div className="mt-[1.9rem] flex flex-wrap justify-center gap-[0.6rem]">
           <Link
             href="#estado"
-            className="inline-flex items-center gap-2 rounded-[var(--luna-radius)] border border-[var(--luna-accent)] bg-[var(--luna-accent)] px-[1.1rem] py-2.5 text-[length:var(--luna-step--1)] font-semibold text-[var(--luna-on-accent)] transition hover:brightness-110"
+            className="inline-flex items-center gap-[0.45rem] rounded-full border border-[#A0B8C8] bg-[#A0B8C8] px-5 py-[0.7rem] text-[0.85rem] font-semibold text-[#000206] transition hover:brightness-110"
           >
             Ver o estado do sistema
             <ArrowRight className="h-[15px] w-[15px]" aria-hidden="true" />
           </Link>
           <Link
             href="/ronda"
-            className="inline-flex items-center gap-2 rounded-[var(--luna-radius)] border border-[var(--luna-line-2)] px-[1.1rem] py-2.5 text-[length:var(--luna-step--1)] font-medium text-[var(--luna-text)] transition hover:border-[var(--luna-line-3)] hover:bg-[var(--luna-surface)]"
+            className="inline-flex items-center gap-[0.45rem] rounded-full border border-[rgba(112,136,160,0.3)] px-5 py-[0.7rem] text-[0.85rem] font-medium text-[#DCE6F2] transition hover:border-[rgba(112,136,160,0.5)]"
           >
             <Smartphone className="h-[15px] w-[15px]" aria-hidden="true" />
             Abrir Safety Walk
           </Link>
         </div>
-
-        <div className="luna-reveal mt-[clamp(3rem,6vw,4.5rem)] grid grid-cols-2 border-t border-[var(--luna-line-2)] md:grid-cols-4">
-          {STRIP.map((cell, index) => (
-            <div
-              key={cell.name}
-              className={`px-5 pb-[1.4rem] pt-[1.1rem] ${
-                // A borda direita some na última coluna de cada quebra, e as
-                // duas primeiras células ganham borda inferior no layout de
-                // duas colunas — senão a grade fica com um risco solto.
-                index % 2 === 1 ? "md:border-r" : "border-r"
-              } ${index < 2 ? "border-b md:border-b-0" : ""} ${
-                index === 3 ? "md:border-r-0" : ""
-              } border-[var(--luna-line)]`}
-            >
-              <div
-                className={`mb-[0.85rem] h-[3px] w-9 rounded-sm ${SITE_CLASSIFICATION_BAR[cell.classification]}`}
-              />
-              <p className="mb-0.5 text-[length:var(--luna-step--1)] font-semibold">{cell.name}</p>
-              <p className="text-xs leading-[1.45] text-[var(--luna-text-3)]">{cell.note}</p>
-            </div>
-          ))}
-        </div>
       </div>
+
+      <span className="luna-hero-scroll" aria-hidden="true">
+        role
+      </span>
     </section>
+  );
+}
+
+/**
+ * Faixa de estado — mesmo conteúdo/dado de sempre (`STRIP`), fora da cena
+ * escura do hero: no protótipo (`.estado`) ela já é seção irmã, não filha
+ * de `.hero`, lendo os tokens normais de tema em vez da paleta fixa da
+ * cena espacial. Sem `id="estado"` aqui — quem já tem esse id é a seção
+ * "Estado do sistema" (`state-ledger.tsx`), que é o alvo real do link
+ * "Ver o estado do sistema" acima; duplicar o id quebraria a âncora.
+ */
+export function HeroEstado() {
+  return (
+    <div className="luna-reveal mx-auto grid max-w-[1240px] grid-cols-2 gap-px bg-[var(--luna-line)] px-[var(--luna-pad)] py-[clamp(2rem,6vw,3.5rem)] md:grid-cols-4">
+      {STRIP.map((cell) => (
+        <div key={cell.name} className="bg-[var(--luna-bg)] p-[1.1rem]">
+          <div className={`mb-3 h-[3px] w-[2.2rem] rounded-sm ${SITE_CLASSIFICATION_BAR[cell.classification]}`} />
+          <p className="mb-0.5 text-[0.85rem] font-semibold">{cell.name}</p>
+          <p className="text-[0.76rem] leading-[1.5] text-[var(--luna-text-3)]">{cell.note}</p>
+        </div>
+      ))}
+    </div>
   );
 }
