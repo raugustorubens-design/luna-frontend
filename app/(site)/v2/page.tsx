@@ -3,7 +3,7 @@ import { ArrowRight } from "lucide-react";
 import { SiteThemeProvider } from "@/components/theme/site-theme-provider";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { Reveal } from "@/components/site/reveal";
-import { Hero } from "@/components/site/hero";
+import { Hero, HeroEstado } from "@/components/site/hero";
 import { Products } from "@/components/site/products";
 import { StateLedger } from "@/components/site/state-ledger";
 import { Pipeline } from "@/components/site/pipeline";
@@ -61,6 +61,7 @@ export default function SiteV2Page() {
 
         <main>
           <Hero />
+          <HeroEstado />
           <Products />
           <StateLedger />
           <Pipeline />

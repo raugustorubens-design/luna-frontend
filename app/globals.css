@@ -564,3 +564,112 @@ body {
    nem pedido. Sem `[data-theme="light"]` aqui de propósito, não esquecido —
    os valores de `[data-theme="light"]` declarados mais acima continuam
    valendo sem alteração. */
+
+/* ===========================================================================
+ * Hero do /v2 — LUNA no espaço (GENESIS/pacotes/2026-08-20-hero-luna-espaco.md),
+ * 20/08/2026. `referencia_hero-luna-espaco.html`, aprovado pelo Arquiteto, é a
+ * especificação — cores e medidas abaixo são as dele, portadas, não estimadas.
+ *
+ * Hex literais, não `--luna-*`: o protótipo é escuro e o pacote pede, na
+ * "Condição de parada" sobre o tema claro, que sem solução de decisão do
+ * Arquiteto se reporte e siga com o escuro — então esta cena fica escura
+ * **nos dois temas** de propósito, ignorando `[data-theme="light"]`. Decisão
+ * registrada, não silenciosa — ver PENDENTE.md e o corpo do PR.
+ * ======================================================================== */
+.luna-hero-horizonte {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 55% at 50% 100%, rgba(12, 108, 204, 0.2) 0%, transparent 62%),
+    radial-gradient(80% 40% at 50% 108%, rgba(60, 144, 204, 0.16) 0%, transparent 60%),
+    linear-gradient(180deg, #000206 0%, #000409 62%, #00101e 100%);
+}
+
+.luna-hero-luna {
+  position: relative;
+  z-index: 2;
+  width: min(78vw, 360px);
+  aspect-ratio: 1080 / 1122;
+  will-change: transform;
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.luna-hero-luna img {
+  display: block;
+  width: 100%;
+  height: auto;
+  filter: drop-shadow(0 26px 60px rgba(0, 0, 0, 0.7));
+  -webkit-mask-image: radial-gradient(ellipse 74% 82% at 52% 44%, #000 58%, transparent 88%);
+  mask-image: radial-gradient(ellipse 74% 82% at 52% 44%, #000 58%, transparent 88%);
+}
+
+.luna-hero-disco {
+  position: absolute;
+  left: 79.6%;
+  top: 50.8%;
+  width: 17.6%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 1px rgba(160, 184, 200, 0.55),
+    0 0 30px 13px rgba(12, 108, 204, 0.39);
+}
+
+.luna-hero-disco::after {
+  content: "";
+  position: absolute;
+  inset: 16%;
+  border-radius: 50%;
+  border: 1px solid rgba(160, 184, 200, 0.62);
+  animation: luna-hero-pulso 3.2s ease-in-out infinite;
+}
+
+@keyframes luna-hero-pulso {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.09);
+    opacity: 1;
+  }
+}
+
+.luna-hero-scroll {
+  position: absolute;
+  bottom: 1.1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  font-family: var(--luna-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(220, 230, 242, 0.3);
+  animation: luna-hero-respira 2.6s ease-in-out infinite;
+}
+
+@keyframes luna-hero-respira {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.75;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .luna-hero-disco::after,
+  .luna-hero-scroll {
+    animation: none;
+  }
+  .luna-hero-luna {
+    transform: none !important;
+  }
+}

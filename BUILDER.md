@@ -2470,3 +2470,123 @@ também devia contar). Registrando aqui como achado, não como consertado.
 Next action: Architect confirma os quatro pontos do portão (a ordem que
 mais importa é `/ronda` continuar igual) e decide se o achado do portão de
 matiz vira pacote próprio.
+
+---
+
+## 20/08/2026 — `GENESIS/pacotes/2026-08-20-hero-luna-espaco.md`: LUNA no espaço
+
+`referencia_hero-luna-espaco.html`, aprovado pelo Arquiteto, foi a especificação —
+reproduzido, não estimado. Escopo: hero de `app/(site)/v2/` e o componente `LunaCore`
+do `#45`.
+
+### 0 · A imagem
+
+`public/luna/luna-android.webp` (1080×1122) e `luna-android-sm.webp` (560×581) —
+extraídas do `data:` URI embutido no próprio HTML de referência (`var IMG="data:image/
+webp;base64,..."`), não recebidas como arquivo solto: o zip `ASSETS/` mencionado no
+`0_LEIA-PRIMEIRO.md` não veio nos anexos desta sessão, só o HTML. Confirmado por
+tamanho/dimensão antes de usar: o `.webp` embutido tem 161.814 bytes e 1080×1122px —
+bate exatamente com a tabela do pacote (`162 KB`). A versão `sm` foi gerada aqui por
+redimensionamento (560×581, ~48 KB) a partir da mesma imagem — não existe uma segunda
+imagem separada no anexo para essa resolução. Servidas por `srcset`
+(`sizes="(max-width: 640px) 78vw, 360px"`).
+
+`public/luna/luna-core-reference.png` (imagem antiga) **não foi removida** — só parou
+de ser referenciada pelo hero.
+
+### 1-4 · Sem quadriculado, horizonte, LUNA centralizada, frase abaixo
+
+`components/site/luna-hero-visual.tsx` (novo, client component) — porta 1:1 o JS do
+protótipo: campo de estrelas com densidade crescente pra baixo (`Math.pow(Math.random(),
+.62)` na coordenada vertical), sinapses clipadas na elipse do crânio (`54.6%/33.9%`,
+raios `31.5%/28.5%`), disco pulsante em `79.6%/50.8%`. Valores da tabela "50% mais
+forte" (opacidade base `.375`, amplitude `.45`, raio dos nós `1.9`/`2.5`, linha `.36`,
+halo `.39`·30px, anel `.6`/`1`) **já vinham assim no HTML de referência** — não recalculei,
+só portei o que já estava lá.
+
+`app/globals.css` ganha `.luna-hero-*` — hex literais (não `--luna-*`), decisão
+explicada abaixo. `.luna-grid` (o quadriculado) **parou de ser usado no hero**, mas a
+regra CSS continua declarada (não removida — pré-resposta "remova só no hero").
+
+`components/site/hero.tsx` reestruturado: LUNA centralizada acima, frase abaixo,
+paralaxe com cursor / deriva lenta sem cursor (`pointer:fine`), `prefers-reduced-motion`
+desativa tudo — mesma lógica do protótipo.
+
+**Achado corrigido durante a montagem:** minha primeira versão colocou `id="estado"` na
+faixa de estado nova — só depois percebi que esse id **já existe** em
+`state-ledger.tsx` (a seção "Estado do sistema" de verdade, alvo real do link "Ver o
+estado do sistema"). Duplicar o id quebraria a âncora. Removi o id da faixa nova antes
+de commitar — não chegou a subir com o bug.
+
+**Erro que só o teste visual pegou:** a primeira versão do parallax usava `my-.42` em
+vez de `my-.5` (constante inicial de `my`, não o centro do delta) — copiei errado na
+primeira passada, o protótipo usa `.5` nas duas coordenadas
+(`var px=(mx-.5), py=(my-.5)`). Corrigido antes de testar visualmente.
+
+### `LunaCore` do `#45`
+
+**Não removido, só não é mais usado no hero.** A pré-resposta do pacote autorizava
+manter a órbita "se couber no orçamento de luz"; o próprio protótipo aprovado usa
+sinapses+disco, não órbita — reproduzir o protótipo implicava não usar `LunaCore` aqui.
+O arquivo `components/site/luna-core.tsx` continua no repositório, sem import nenhum
+apontando pra ele agora.
+
+### Verificação visual — não só `build`/`typecheck`
+
+Rodei o dev server (`tsx server.ts`) e abri `/v2` de verdade via Playwright
+(`/opt/pw-browsers/chromium`, já pré-instalado neste ambiente), em dois viewports:
+
+- **Mobile (390×844, dpr 2)** — a LUNA aparece inteira, centralizada, com a máscara
+  elíptica aplicada (confirmado via `getComputedStyle` — `mask-image` presente,
+  container `304×316px`, `srcset` resolvendo pro `-sm` nesse viewport). Comparei lado a
+  lado com o `referencia_hero-luna-espaco.html` renderizado localmente (mesmo motor,
+  mesmo viewport) — composição visualmente equivalente.
+- **Desktop (1440×900)** — o `h1` quebra em uma palavra por linha
+  ("Nada / do que / foi / decidido / se / perde."). **Não é bug meu**: renderizei o
+  `referencia_hero-luna-espaco.html` original no mesmo viewport e ele quebra
+  exatamente do mesmo jeito — `max-width:24ch` em `.copy` é resolvido contra o
+  font-size do próprio `.copy` (herdado do corpo, ~16px), não o do `h1` (57.6px), então
+  24ch vira ~216px, estreito demais pro título em telas largas. Reproduzi o protótipo
+  como estava — não redesenhei por conta. Registrado em `PENDENTE.md` como achado pro
+  Arquiteto decidir (o pacote pede portão só no celular, "que é onde o defeito
+  aparece" — o desktop não tinha critério de aceite explícito).
+- **Animação confirmada**: dois frames com ~1,6s de intervalo têm diferença de pixel
+  não-trivial na região das estrelas/sinapses — não é imagem estática.
+
+### Tema claro — decisão tomada, não perguntada, conforme a pré-resposta
+
+Condição de parada do próprio pacote: "o tema claro não ter solução sem decisão do
+Arquiteto → reporte e siga com o escuro." Implementei a cena (`.luna-hero-*`) com hex
+literais, ignorando `[data-theme="light"]` de propósito — a cena fica escura nos dois
+temas, uma das duas opções que o pacote listava. Registrado em `PENDENTE.md`.
+
+### O texto do subtítulo — mantive o do site, não o do protótipo
+
+O protótipo tem `<p class="sub">Ela guarda decisões, reconstrói o contexto de onde
+parou, e opera três frentes de trabalho real.</p>` — mais curto que o texto real do
+site (que nomeia as três frentes). O pacote descreve estrutura/layout da seção "4 · A
+frase, abaixo", não pede reescrever o texto — mantive o parágrafo completo já em
+produção, só reposicionado. Se o Arquiteto queria o texto mais curto do protótipo,
+é decisão dele, registrada como dúvida, não como algo que eu deveria ter adivinhado.
+
+### O que NÃO fiz
+
+- Não toquei `components/site/luna-core.tsx` — arquivo intacto, só sem uso no hero.
+- Não removi `.luna-grid` de `globals.css`, só o uso dela no hero.
+- Não criei o zip `ASSETS/` que faltou — extraí a imagem do próprio HTML de
+  referência, que continha o `data:` URI completo.
+- Não resolvi a divergência de texto do subtítulo nem a quebra do `h1` no desktop —
+  registrados para decisão, não corrigidos por conta.
+
+### Verificação automática
+
+- `pnpm run typecheck` — limpo.
+- `pnpm run test` — 121 testes, 0 falha.
+- `pnpm run test:constitution` — passa; 9 arquivos no portão de matiz agora (o novo
+  `luna-hero-visual.tsx` entrou na varredura) — todos os hex literais usados (`#3C90CC`,
+  `#0C6CCC`, `#E4B448`, `#A0B8C8`, etc.) caem dentro das faixas 200°-220°/17°-55°,
+  conferido por cálculo antes de escrever, não por sorte.
+- `pnpm run build` — limpo, sem warning novo.
+
+Next action: Architect abre `/v2` no aparelho real (portão do pacote) e decide os dois
+itens registrados em `PENDENTE.md` (tema claro definitivo, quebra do `h1` no desktop).
