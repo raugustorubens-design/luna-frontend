@@ -15,9 +15,10 @@ import {
   type RiskState,
   type FindingClassification,
   type MissingField,
+  type PhotoExif,
 } from "@/lib/ronda/types";
 import { fieldDomId } from "@/lib/ronda/field-anchor";
-import { compressPhoto, photoToBase64, readImageDimensions, type CompressedPhoto } from "@/lib/ronda/photo";
+import { compressPhoto, extractPhotoExif, photoToBase64, readImageDimensions, type CompressedPhoto } from "@/lib/ronda/photo";
 import { saveOriginalPhoto } from "@/lib/ronda/db";
 import { uploadFoto, rondaFotoUrl } from "@/lib/ronda/api-client";
 import { getFotoSugestao } from "@/lib/ronda/api-client";
@@ -152,6 +153,12 @@ export function FindingCard({
       // confirmada em disco, que sobrevive à aba sendo descartada no meio da
       // própria compressão. Só depois disso o risco começa.
       const compressed: CompressedPhoto[] = [];
+      // Lida do `File` original, antes de `compressPhoto` redesenhar a
+      // imagem num canvas — passo que reescreve os bytes do zero e descarta
+      // qualquer EXIF (data/hora real da captura, GPS, aparelho). Extraída
+      // aqui, ainda com o arquivo original intacto, para viajar junto do
+      // upload em vez de se perder.
+      const exifs: (PhotoExif | null)[] = [];
       const photoIds: string[] = [];
       for (const file of fileList) {
         const photoId = newPhotoId();
@@ -159,9 +166,10 @@ export function FindingCard({
         const inputDims = await readImageDimensions(file);
         await logCompressionStarted(photoId, file.size, inputDims);
         const startedAt = Date.now();
-        const result = await compressPhoto(file);
+        const [result, exif] = await Promise.all([compressPhoto(file), extractPhotoExif(file)]);
         await logCompressionCompleted(photoId, result.blob.size, result.width, result.height, Date.now() - startedAt);
         compressed.push(result);
+        exifs.push(exif);
       }
 
       const novosIds: string[] = [];
@@ -174,12 +182,12 @@ export function FindingCard({
         const photoId = photoIds[i];
         await logUploadRequested(photoId, foto.blob.size);
         try {
-          const { fotoId } = await uploadFoto(foto.blob, fileList[i], finding.id);
+          const { fotoId } = await uploadFoto(foto.blob, fileList[i], finding.id, exifs[i]);
           novosIds.push(fotoId);
           await logUploadCompleted(photoId);
         } catch (error) {
           await logUploadFailed(photoId, error instanceof Error ? error.message : "Falha desconhecida no upload.");
-          aindaLocais.push(await photoToBase64(foto));
+          aindaLocais.push(await photoToBase64(foto, exifs[i]));
           originaisParaGuardar.push(fileList[i]);
         }
       }

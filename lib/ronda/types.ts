@@ -65,10 +65,29 @@ export const FINDING_SEVERITY_LABELS: Record<FindingSeverity, string> = {
   critica: "Crítica",
 };
 
+/**
+ * Procedência lida do EXIF do arquivo original, antes de `compressPhoto`
+ * redesenhar a imagem num canvas (o que apaga qualquer metadado). Todos os
+ * campos são opcionais — depende do aparelho e de o EXIF não ter sido
+ * removido antes de chegar aqui (ex. app de câmera de terceiros).
+ */
+export interface PhotoExif {
+  /** ISO 8601 — `DateTimeOriginal` do EXIF, hora real da captura (não a hora do upload). */
+  capturedAt?: string;
+  gpsLat?: number;
+  gpsLng?: number;
+  /** Tag `Orientation` do EXIF (1-8) — já aplicada visualmente pelo `imageOrientation: "from-image"` da compressão; guardada aqui só como registro. */
+  orientation?: number;
+  deviceMake?: string;
+  deviceModel?: string;
+}
+
 export interface RondaPhoto {
   /** Base64, sem prefixo `data:` — mesmo padrão do backend (`convergia_visual_templates`). */
   dataBase64: string;
   mimeType: string;
+  /** Procedência do arquivo original, quando disponível — ver `PhotoExif`. Exibição no relatório é opt-in do cliente (dado sensível: coordenada de planta) e nunca aparece no nível gratuito. */
+  exif?: PhotoExif;
 }
 
 export interface RondaMetadata {

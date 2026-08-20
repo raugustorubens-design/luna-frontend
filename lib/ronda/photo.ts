@@ -1,4 +1,5 @@
-import type { RondaPhoto } from "./types";
+import exifr from "exifr";
+import type { PhotoExif, RondaPhoto } from "./types";
 
 /** Versão de campo recém-comprimida, ainda como binário. Vira `RondaPhoto` (base64) só se precisar ser guardada/enviada embutida no relatório. `width`/`height` são a dimensão de saída — existem para a instrumentação de diagnóstico (`lib/ronda/diagnostics.ts`) registrar sem precisar decodificar de novo. */
 export interface CompressedPhoto {
@@ -222,6 +223,43 @@ function compressWithCanvasImage(file: File): Promise<CompressedPhoto> {
 }
 
 /**
+ * Lê a procedência (data/hora real da captura, GPS, orientação, modelo do
+ * aparelho) do JPEG original — **antes** de `compressPhoto` redesenhar a
+ * imagem num canvas, o que reescreve os bytes do zero e descarta qualquer
+ * EXIF. É por isso que esta função recebe o `File` de entrada, nunca o
+ * `CompressedPhoto` de saída.
+ *
+ * Valor de auditoria, não conveniência: uma foto com coordenada e horário
+ * carimbados prova onde e quando o achado foi registrado, em vez de só
+ * afirmar. `null` (arquivo sem EXIF, formato não suportado, tag corrompida)
+ * é uma resposta válida e comum — nunca bloqueia o anexo da foto.
+ */
+export async function extractPhotoExif(file: File): Promise<PhotoExif | null> {
+  try {
+    const [tags, gps] = await Promise.all([
+      exifr.parse(file, ["DateTimeOriginal", "Orientation", "Make", "Model"]).catch(() => null),
+      exifr.gps(file).catch(() => null),
+    ]);
+
+    const exif: PhotoExif = {};
+    if (tags?.DateTimeOriginal instanceof Date && !Number.isNaN(tags.DateTimeOriginal.getTime())) {
+      exif.capturedAt = tags.DateTimeOriginal.toISOString();
+    }
+    if (gps && typeof gps.latitude === "number" && typeof gps.longitude === "number") {
+      exif.gpsLat = gps.latitude;
+      exif.gpsLng = gps.longitude;
+    }
+    if (typeof tags?.Orientation === "number") exif.orientation = tags.Orientation;
+    if (typeof tags?.Make === "string" && tags.Make.trim()) exif.deviceMake = tags.Make.trim();
+    if (typeof tags?.Model === "string" && tags.Model.trim()) exif.deviceModel = tags.Model.trim();
+
+    return Object.keys(exif).length > 0 ? exif : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Câmera nativa de um celular real produz fotos de vários MB — inviável
  * para IndexedDB (quota do navegador) e para o payload JSON de
  * `POST /convergia/ronda` em rede de campo ruim. Redimensiona (teto por
@@ -252,14 +290,17 @@ export async function compressPhoto(file: File): Promise<CompressedPhoto> {
 /**
  * Converte a versão de campo para o formato que viaja embutido no relatório.
  * Só é chamada no caminho de contingência — foto que não conseguiu subir na
- * hora e vai ter que esperar dentro do payload da ronda.
+ * hora e vai ter que esperar dentro do payload da ronda. `exif`, quando
+ * informado (lido do `File` original antes da compressão), viaja junto para
+ * não se perder enquanto a foto aguarda a segunda tentativa de upload
+ * (`promoteEmbeddedPhotos`).
  */
-export function photoToBase64(photo: CompressedPhoto): Promise<RondaPhoto> {
+export function photoToBase64(photo: CompressedPhoto, exif?: PhotoExif | null): Promise<RondaPhoto> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      resolve({ dataBase64: result.slice(result.indexOf(",") + 1), mimeType: photo.mimeType });
+      resolve({ dataBase64: result.slice(result.indexOf(",") + 1), mimeType: photo.mimeType, ...(exif ? { exif } : {}) });
     };
     reader.onerror = () => reject(reader.error ?? new Error("Não foi possível ler a foto comprimida."));
     reader.readAsDataURL(photo.blob);

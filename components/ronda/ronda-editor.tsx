@@ -281,7 +281,9 @@ function Editor({ source }: { source: EditorSource }) {
         {/*
           Item 2 da fila (curadoria) — o botão não gera mais direto daqui:
           leva pra tela de curadoria primeiro (editar/excluir achado), que é
-          quem gera de fato. Regra do desenho ("a ronda não muda, o
+          quem gera de fato — inclusive a escolha de formato/orientação/
+          papel (Etapa 1 de `2026-08-19-saida-formato-e-pagina.md`), que
+          mora lá agora, não aqui. Regra do desenho ("a ronda não muda, o
           relatório carrega a versão curada") só é respeitada se gerar
           sempre passar por ali. Só em `source.kind === "server"`: uma ronda
           ainda na fila local não tem `rondaId` confirmado pelo servidor

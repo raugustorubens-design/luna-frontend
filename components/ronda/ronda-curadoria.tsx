@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   baixarRelatorioRonda,
@@ -33,6 +33,23 @@ export function RondaCuradoria({ rondaId }: { rondaId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [gerando, setGerando] = useState(false);
   const [gerarError, setGerarError] = useState<string | null>(null);
+  const [gerarWarnings, setGerarWarnings] = useState<string[] | null>(null);
+  const [formato, setFormato] = useState<"pptx" | "xlsx" | "docx">("pptx");
+  const [orientacao, setOrientacao] = useState<"retrato" | "paisagem">("paisagem");
+  const [papel, setPapel] = useState<"a4" | "oficio" | "carta">("a4");
+  const orientacaoTocada = useRef(false);
+
+  function handleFormatoChange(next: "pptx" | "xlsx" | "docx") {
+    setFormato(next);
+    if (!orientacaoTocada.current) {
+      setOrientacao(next === "docx" ? "retrato" : "paisagem");
+    }
+  }
+
+  function handleOrientacaoChange(next: "retrato" | "paisagem") {
+    orientacaoTocada.current = true;
+    setOrientacao(next);
+  }
 
   const load = useCallback(async () => {
     try {
@@ -65,8 +82,9 @@ export function RondaCuradoria({ rondaId }: { rondaId: string }) {
   async function handleGerar() {
     setGerando(true);
     setGerarError(null);
+    setGerarWarnings(null);
     try {
-      const relatorio = await gerarRelatorioRonda(rondaId);
+      const { relatorio, warnings } = await gerarRelatorioRonda(rondaId, formato, orientacao, papel);
       const arquivo = await baixarRelatorioRonda(relatorio.relatorioId);
       const url = URL.createObjectURL(arquivo.blob);
       const link = document.createElement("a");
@@ -74,6 +92,7 @@ export function RondaCuradoria({ rondaId }: { rondaId: string }) {
       link.download = arquivo.filename;
       link.click();
       URL.revokeObjectURL(url);
+      if (warnings && warnings.length > 0) setGerarWarnings(warnings);
     } catch (err) {
       setGerarError(err instanceof RondaSubmitError ? err.message : "Falha ao gerar o relatório.");
     } finally {
@@ -132,7 +151,51 @@ export function RondaCuradoria({ rondaId }: { rondaId: string }) {
           {incluidos.length} de {achados.length} achado{achados.length === 1 ? "" : "s"} vai{achados.length === 1 ? "" : "vão"} entrar no
           relatório.
         </p>
+        <div className="mb-2 grid grid-cols-3 gap-2">
+          <label className="flex flex-col gap-1 text-[11px] text-[#6B7C99] dark:text-[#5A6E8A]">
+            Formato
+            <select
+              value={formato}
+              onChange={(event) => handleFormatoChange(event.target.value as "pptx" | "xlsx" | "docx")}
+              className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-xs text-[#0A1B3D] [color-scheme:dark] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2] dark:[color-scheme:light]"
+            >
+              <option value="pptx">PPTX</option>
+              <option value="xlsx">XLSX</option>
+              <option value="docx">DOCX</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-[11px] text-[#6B7C99] dark:text-[#5A6E8A]">
+            Orientação
+            <select
+              value={orientacao}
+              onChange={(event) => handleOrientacaoChange(event.target.value as "retrato" | "paisagem")}
+              className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-xs text-[#0A1B3D] [color-scheme:dark] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2] dark:[color-scheme:light]"
+            >
+              <option value="retrato">Retrato</option>
+              <option value="paisagem">Paisagem</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-[11px] text-[#6B7C99] dark:text-[#5A6E8A]">
+            Papel
+            <select
+              value={papel}
+              onChange={(event) => setPapel(event.target.value as "a4" | "oficio" | "carta")}
+              className="rounded border border-black/15 bg-transparent px-2 py-1.5 text-xs text-[#0A1B3D] [color-scheme:dark] dark:border-[rgba(112,136,160,0.28)] dark:text-[#DCE6F2] dark:[color-scheme:light]"
+            >
+              <option value="a4">A4</option>
+              <option value="oficio">Ofício</option>
+              <option value="carta">Carta</option>
+            </select>
+          </label>
+        </div>
         {gerarError && <p className="mb-2 text-xs text-red-400">{gerarError}</p>}
+        {gerarWarnings && gerarWarnings.length > 0 && (
+          <div className="mb-2 rounded border border-amber-400/60 bg-amber-400/10 p-2 text-[11px] text-amber-800 dark:text-amber-300">
+            {gerarWarnings.map((warning, index) => (
+              <p key={index}>{warning}</p>
+            ))}
+          </div>
+        )}
         <button
           type="button"
           disabled={gerando || incluidos.length === 0}
