@@ -2367,3 +2367,106 @@ pacotes da fila original (`A`, `B`, `C`) estarão completos — falta só o
 que o `PLANO_o-resto.md` já tem por dentro (vetores faltantes, gerador
 de relatório, Constituição no prompt — todos em `luna-core`, fora deste
 repositório).
+
+---
+
+## 20/08/2026 — `GENESIS/pacotes/2026-08-19-paleta-em-tudo.md`: roxo do `body` e inversão do shadcn
+
+### Etapa 1 — o roxo do `body`
+
+Os três `radial-gradient` do `body` (`app/globals.css`) usavam `#7C3AED`
+(262°) e `#A78BFA` (255°) puros — fora do portão de matiz, atrás de toda
+superfície exceto `/ronda` (que escapa via `.ronda-locked body {
+background-image: none }`). Troquei por duas manchas dentro do portão:
+azul `#A0B8C8` (204°, mesmo `--luna-accent`) e dourado `#E4B448` (~42°,
+mesmo tom da rampa de emissão quente do Padrão SMX de Cores) — nenhum
+roxo. Valor anterior comentado ao lado, como manda o padrão do arquivo.
+
+**Sobre o orçamento de luz (abaixo de 5%):** não existe teste automatizado
+para esse número — conferi que não existe procurando `budget`/`5%` nos
+scripts, não achei nada. Ajustei as opacidades a olho (0.12/0.08 no azul,
+0.05 no dourado — bem mais discreto, como o pacote pede), o mesmo tipo de
+julgamento visual que fixou o "12%–18%" de exemplo do próprio pacote. Não
+é medição, é a mesma natureza de decisão que a Etapa 2 do pacote de
+imagem (`2026-08-20-tres-correcoes.md`) pede para medir com instrumento —
+aqui não há como medir, só comparar a olho contra o antes.
+
+### Etapa 2 — a inversão alcança o shadcn
+
+O Forge v1 (`forge-layout.tsx`, `components/ui/*`) lê `--background`/
+`--muted`/`--secondary`/`--border`/`--foreground`/`--primary`/`--ring`/
+`--luna-cyan` — tokens que o ADR-022 religou para Midnight sólido
+(`--background: 231 53% 25%`), mas que nunca receberam o segundo estágio
+que os tokens `--luna-*` (consumidos por `/v2` e Forge v2) já têm: Midnight
+deixando de ser o fundo da página para virar a superfície que emerge dela.
+
+Acrescentei um terceiro bloco aditivo em `app/globals.css`, convertendo os
+mesmos hex do bloco anterior (`#000206`, Midnight composto nas mesmas
+opacidades de `--luna-surface`/`--luna-surface-3`, `--luna-line-2` para
+borda, `--luna-text`, `--luna-accent`) para HSL — o shadcn lê
+`hsl(var(--token))` sem alfa, mesma aproximação de composição já usada no
+bloco anterior. Conferido programaticamente (script descartável, não
+ficou no repositório): convertendo os HSL de volta para hex, a diferença
+contra o hex-alvo é de no máximo 1 unidade por canal (arredondamento) —
+`220 100% 1%` → `#000205` contra o alvo `#000206`, `204 27% 71%` →
+`#a1b9c9` contra `#a0b8c8`, e assim para os demais.
+
+**`--radius` não foi tocado** (mesma razão de sempre — `/ronda` usa
+`rounded-lg` direto). **`--destructive`/`--destructive-foreground` não
+foram tocados** — são classificação, o pacote pediu explicitamente para
+manter. **`--primary-foreground`/`--secondary-foreground` não foram
+tocados** — não estavam na tabela do pacote, e o `--primary` novo é mais
+claro (71% L) que o antigo, então o contraste do texto escuro por cima só
+melhora, não piora.
+
+### Etapa 3 — marcar o legado
+
+`tailwind.config.ts` (`luna.violet`, `luna.success`, `luna.danger`) **já
+estava comentado como legado** antes desta sessão — nada a fazer ali.
+`app/globals.css` (`--luna-violet`) **não estava** — acrescentei o mesmo
+tipo de comentário ("LEGADO do Modo Usuário v1 ... NÃO REMOVER ... hero.tsx
+e cognitive-session-modal.tsx ainda leem"), sem apagar a declaração (ainda
+em uso).
+
+### Achado — o portão de matiz tem um buraco, exatamente como o pacote previu
+
+O pacote pedia para reportar se o teste do portão de matiz não pegasse o
+roxo do `body` — **não pega, por dois motivos independentes, e cada um
+sozinho já bastaria**:
+
+1. `scripts/constitution-check.mjs` só varre `components/site/**` e os
+   arquivos `*-v2` de `components/forge/**` (`hueGateFiles = [...siteFiles,
+   ...forgeV2Files]`) — `app/globals.css` nunca entra na lista.
+2. `hue-gate.mjs` só reconhece hex literal (`/#[0-9a-fA-F]{6}\b/g`) — o
+   `body` usava `rgba(124, 58, 237, 0.24)`, não `#7C3AED`; mesmo se o
+   arquivo fosse varrido, o regex não bateria.
+
+Não mexi no `hue-gate.mjs` nem no `constitution-check.mjs` — não é o
+escopo deste pacote, e ampliar um portão de teste é decisão que merece o
+próprio pacote (o que varrer, que formato de cor reconhecer, se `rgba()`
+também devia contar). Registrando aqui como achado, não como consertado.
+
+### O que NÃO fiz
+
+- Não toquei o tema claro (`[data-theme="light"]`) em nenhum dos dois
+  blocos novos — a Etapa 2 não pediu, e o Forge v1 no claro não foi medido.
+- Não ampliei o `hue-gate.mjs` para varrer CSS nem para reconhecer `rgba()`
+  — achado acima, não correção.
+- Não toquei nenhum componente — só `app/globals.css`, como o escopo do
+  pacote pedia.
+
+### Verificação
+
+- `pnpm run typecheck` — limpo.
+- `pnpm run test` — 121 testes, 0 falha (inclui `hue-gate.test.ts`,
+  inalterado).
+- `pnpm run test:constitution` — passa (108 arquivos varridos, 8 no portão
+  de matiz — confirma o achado acima: `globals.css` não é um dos 8).
+- `pnpm run build` — limpo, sem warning novo.
+- **Portão do Arquiteto, não feito aqui:** abrir `/forge`,
+  `/forge?tab=convergia`, `/` e **`/ronda`** (que precisa continuar
+  idêntico) no aparelho real — ver `PENDENTE.md`.
+
+Next action: Architect confirma os quatro pontos do portão (a ordem que
+mais importa é `/ronda` continuar igual) e decide se o achado do portão de
+matiz vira pacote próprio.

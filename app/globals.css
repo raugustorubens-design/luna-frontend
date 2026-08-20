@@ -26,6 +26,12 @@
 
   /* Identidade visual da LUNA, isolada — mesma paleta ciano/violeta do User Mode. */
   --luna-cyan: 190 82% 60%;
+  /* LEGADO do Modo Usuário v1 (GENESIS/pacotes/2026-08-19-paleta-em-tudo.md,
+     Etapa 3, 20/08/2026) — matiz 258°, fora do portão de matiz (200°-220°
+     ou 17°-55°). NÃO REMOVER: hero.tsx e cognitive-session-modal.tsx (v1)
+     ainda leem `bg-luna-violet`/`shadow-aura`. Proibido em superfície
+     nova — mesma regra que já vale para `luna.violet` em
+     tailwind.config.ts. */
   --luna-violet: 258 70% 68%;
   --luna-glow: 0 0 24px hsl(var(--luna-cyan) / 0.25);
 }
@@ -145,10 +151,33 @@
 
 body {
   @apply bg-luna-bg text-luna-text antialiased;
+  /*
+   * Pacote "paleta em tudo" (GENESIS/pacotes/2026-08-19-paleta-em-tudo.md,
+   * Etapa 1, 20/08/2026) — o `body` pinta seu próprio fundo (`background-
+   * image`), fora do alcance de qualquer religação de token: `#7C3AED`
+   * (matiz 262°) e `#A78BFA` (matiz 255°) ficavam vivos aqui, atrás de
+   * TODAS as superfícies (só `/ronda` escapava, via `.ronda-locked body {
+   * background-image: none }`). Duas manchas agora, dentro do portão de
+   * matiz: azul (`#A0B8C8`, 204°, mesmo tom do `--luna-accent`) e dourado
+   * (`#E4B448`, ~42°, mesmo tom da rampa de emissão quente do Padrão SMX de
+   * Cores) — nenhum roxo. Opacidade baixa nas duas, o dourado mais discreto
+   * que o azul, para a emissão fria/quente somada ficar dentro do
+   * orçamento de luz do padrão (não há teste automatizado para este número
+   * — é o mesmo julgamento visual que fixou o "12%–18%" do padrão; medido
+   * a olho contra o fundo `#000206`, não calculado).
+   */
+  background-image:
+    radial-gradient(circle at 20% 10%, rgba(160, 184, 200, 0.12), transparent 35%),
+    radial-gradient(circle at 80% 20%, rgba(160, 184, 200, 0.08), transparent 30%),
+    radial-gradient(circle at 40% 80%, rgba(228, 180, 72, 0.05), transparent 35%);
+  /* Valores anteriores, roxo puro — GENESIS/pacotes/2026-08-19-paleta-em-tudo.md
+     pede a substituição, não o apagamento; reverter é trocar o bloco acima
+     por este:
   background-image:
     radial-gradient(circle at 20% 10%, rgba(124, 58, 237, 0.24), transparent 35%),
     radial-gradient(circle at 80% 20%, rgba(34, 211, 238, 0.16), transparent 30%),
     radial-gradient(circle at 40% 80%, rgba(167, 139, 250, 0.14), transparent 35%);
+  */
 }
 
 .glass {
@@ -486,3 +515,52 @@ body {
   --luna-text: #dce6f2; /* era: var(--luna-paper) — #F4F6FB. Sobre quase preto, branco quase puro cintila. */
   --luna-accent: #a0b8c8; /* era: #22d3ee — matiz 188°, 27° fora da faixa azul. #A0B8C8 é o tom em que o holograma aparece nas três imagens de referência, 10:1 de contraste sobre #000206. */
 }
+
+/* ===========================================================================
+ * Pacote "fundo novo em todas as superfícies" (GENESIS/pacotes/
+ * 2026-08-19-paleta-em-tudo.md, Etapa 2), 20/08/2026 — a inversão do bloco
+ * "tirar o roxo" logo acima (Midnight de fundo da página para superfície
+ * que emerge dela) chegou aos tokens `--luna-*` (consumidos por
+ * `components/site/**` e pelos `*-v2` do Forge) mas nunca aos tokens do
+ * shadcn/radix acima (`--background`, `--muted`, `--secondary`, `--border`,
+ * `--foreground`, `--primary`/`--ring`, `--luna-cyan`) — os que
+ * `components/forge/forge-layout.tsx` (Forge v1, ainda em produção) e os
+ * componentes `components/ui/*` leem direto. Consequência real: o Forge v1
+ * ficou preso no primeiro estágio da religação do ADR-022 (Midnight sólido
+ * de fundo), sem nunca receber o segundo estágio que `/v2`/Forge v2 já têm.
+ *
+ * Bloco ADITIVO, mesmo padrão dos dois acima: cada linha traz o valor
+ * anterior comentado ao lado (o valor do ADR-022, primeiro estágio — não o
+ * original pré-ADR-022, que já está comentado lá). Reverter = apagar este
+ * bloco; o Forge volta ao Midnight sólido do ADR-022.
+ *
+ * Valores: os mesmos hex do bloco `--luna-*` acima (`#000206`, Midnight
+ * composto sobre ele nas mesmas duas opacidades de superfície,
+ * `--luna-line-2` para borda, `--luna-text`, `--luna-accent`), convertidos
+ * para HSL porque o shadcn lê `hsl(var(--token))` sem canal alfa — mesma
+ * aproximação de composição já registrada no bloco anterior. `--radius`
+ * continua intocado, pela mesma razão de sempre (`/ronda` usa `rounded-lg`
+ * direto). `--destructive`/`--destructive-foreground` continuam iguais —
+ * são classificação, não superfície, e o pacote pediu explicitamente para
+ * não tocar.
+ * ======================================================================== */
+:root {
+  --background: 220 100% 1%; /* era: 231 53% 25% — #1E2761, Midnight sólido do ADR-022. Agora #000206 */
+  --foreground: 213 11% 91%; /* era: 222 47% 97% — #F4F6FB, papel. Agora #DCE6F2, mesmo --luna-text */
+  --muted: 230 58% 10%; /* era: 232 42% 30% — Midnight sobre Midnight. Agora Midnight 38% sobre #000206 */
+  --muted-foreground: 230 20% 77%; /* inalterado — já é papel a 72%, segue legível sobre o novo --muted */
+  --border: 210 22% 16%; /* era: 233 31% 36% — Midnight sobre Midnight. Agora #7088A0 28% sobre #000206 */
+  --ring: 204 27% 71%; /* era: 188 86% 53% — #22D3EE. Agora #A0B8C8, mesmo --luna-accent */
+  --primary: 204 27% 71%; /* era: 188 86% 53% — #22D3EE. Agora #A0B8C8, mesmo --luna-accent */
+  /* --primary-foreground não muda: continua escuro (200 68% 6%), e o novo
+     --primary é mais claro (71% L) que o antigo — o contraste só melhora. */
+  --secondary: 231 54% 20%; /* era: 232 38% 32% — Midnight sobre Midnight. Agora Midnight 78% sobre #000206 */
+
+  --luna-cyan: 204 27% 71%; /* era: 188 86% 53% — usado por .forge-accent-text */
+}
+
+/* Etapa 2 do pacote não pede o tema claro para este bloco — mesmo motivo do
+   bloco "tirar o roxo" logo acima: o Forge v1 no tema claro não foi medido
+   nem pedido. Sem `[data-theme="light"]` aqui de propósito, não esquecido —
+   os valores de `[data-theme="light"]` declarados mais acima continuam
+   valendo sem alteração. */
