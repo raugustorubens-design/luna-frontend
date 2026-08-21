@@ -51,6 +51,26 @@ export function Hero() {
           Sistema cognitivo persistente
         </p>
 
+        {/*
+         * GENESIS/pacotes/2026-08-20-hero-desktop-e-acesso.md, item 3 —
+         * assinatura "LUNA", variante F aprovada pelo Arquiteto em 20/08.
+         * Nomeia quem está na imagem acima e sai do caminho: não é um
+         * segundo título, por isso mono/pequeno/espaçado, entre a linha de
+         * sistema e o h1.
+         *
+         * Cor: `text-luna-warm4` (#E4B448, já um token do projeto — ver
+         * tailwind.config.ts), a MESMA cor usada como "memória corroborada"
+         * no sistema. Uso consciente, não engano — ver nota no corpo do PR
+         * antes de trocar essa cor.
+         *
+         * `indent-[.62em]` some com o deslocamento à esquerda que o
+         * `tracking-[.62em]` introduz (o letter-spacing empurra até a
+         * última letra, sem compensar do lado esquerdo).
+         */}
+        <p className="mt-4 mb-[0.6rem] indent-[.62em] font-[family-name:var(--luna-mono)] text-[clamp(1.05rem,2vw,1.3rem)] font-medium tracking-[.62em] text-luna-warm4">
+          LUNA
+        </p>
+
         <h1 className="mt-4 text-balance font-[family-name:var(--luna-display)] text-[clamp(2rem,8.5vw,3.6rem)] font-extrabold leading-[1.02] tracking-[-0.025em] lg:mx-auto lg:max-w-[18ch] lg:text-[clamp(2.6rem,4.2vw,4.6rem)]">
           Nada do que foi decidido{" "}
           <em className="not-italic text-[#8098B0]">se perde.</em>
