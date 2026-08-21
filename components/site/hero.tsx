@@ -36,12 +36,22 @@ export function Hero() {
     >
       <LunaHeroVisual />
 
-      <div className="luna-reveal relative z-[3] mt-[clamp(1.5rem,4vw,2.5rem)] max-w-[24ch] text-center">
+      {/*
+       * GENESIS/pacotes/2026-08-20-hero-desktop-e-acesso.md, item 1 —
+       * `max-w-[24ch]` aqui (no wrapper) é a causa raiz do título colapsado
+       * em ≥1024px: `ch` resolve contra o font-size do próprio elemento em
+       * que a regra está declarada, e este `div` herda o font-size base de
+       * `.luna-v2` (~15px), não o `clamp()` grande do `h1` logo abaixo. Em
+       * qualquer viewport isso colapsa para ~180-200px. Em `lg:` o cap sai
+       * daqui (`lg:max-w-none`) e vai para o próprio `h1`, onde `ch` passa a
+       * resolver contra o font-size correto. Mobile: nada mudou.
+       */}
+      <div className="luna-reveal relative z-[3] mt-[clamp(1.5rem,4vw,2.5rem)] max-w-[24ch] text-center lg:max-w-none">
         <p className="font-[family-name:var(--luna-mono)] text-[0.62rem] uppercase tracking-[0.2em] text-[rgba(220,230,242,0.42)]">
           Sistema cognitivo persistente
         </p>
 
-        <h1 className="mt-4 text-balance font-[family-name:var(--luna-display)] text-[clamp(2rem,8.5vw,3.6rem)] font-extrabold leading-[1.02] tracking-[-0.025em]">
+        <h1 className="mt-4 text-balance font-[family-name:var(--luna-display)] text-[clamp(2rem,8.5vw,3.6rem)] font-extrabold leading-[1.02] tracking-[-0.025em] lg:mx-auto lg:max-w-[18ch] lg:text-[clamp(2.6rem,4.2vw,4.6rem)]">
           Nada do que foi decidido{" "}
           <em className="not-italic text-[#8098B0]">se perde.</em>
         </h1>
