@@ -16,7 +16,7 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
       type="button"
       onClick={toggleTheme}
       aria-label={isDark ? "Mudar para tema claro" : "Mudar para tema escuro"}
-      className={`inline-flex shrink-0 items-center gap-2 rounded-[var(--luna-radius)] border border-[var(--luna-line-2)] px-3 py-1.5 text-xs text-[var(--luna-text-2)] transition-colors hover:border-[var(--luna-line-3)] hover:text-[var(--luna-text)] ${className}`}
+      className={`inline-flex shrink-0 items-center gap-2 rounded-[var(--luna-radius)] border border-[var(--luna-line-2)] px-3 py-1.5 text-[1.125rem] text-[var(--luna-text-2)] transition-colors hover:border-[var(--luna-line-3)] hover:text-[var(--luna-text)] ${className}`}
     >
       <svg
         viewBox="0 0 24 24"
