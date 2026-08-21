@@ -596,6 +596,20 @@ body {
   transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/*
+ * GENESIS/pacotes/2026-08-20-hero-desktop-e-acesso.md, item 1 — em telas
+ * ≥1024px o título ao lado (ver `components/site/hero.tsx`) volta a ocupar
+ * sua largura real (fix do bug de `ch` mal calculado); a imagem de 360px
+ * fixos, dimensionada pro mobile, ficava pequena e perdida no meio da tela
+ * larga por comparação. Cresce proporcionalmente à viewport, com o mesmo
+ * teto (`460px`) que o pacote original sugeriu.
+ */
+@media (min-width: 1024px) {
+  .luna-hero-luna {
+    width: min(38vw, 460px);
+  }
+}
+
 .luna-hero-luna img {
   display: block;
   width: 100%;
