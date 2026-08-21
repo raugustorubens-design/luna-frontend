@@ -16,12 +16,22 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
       type="button"
       onClick={toggleTheme}
       aria-label={isDark ? "Mudar para tema claro" : "Mudar para tema escuro"}
-      className={`inline-flex shrink-0 items-center gap-2 rounded-[var(--luna-radius)] border border-[var(--luna-line-2)] px-3 py-1.5 text-xs text-[var(--luna-text-2)] transition-colors hover:border-[var(--luna-line-3)] hover:text-[var(--luna-text)] ${className}`}
+      /*
+       * GENESIS/pacotes/2026-08-20-hero-desktop-e-acesso.md, item 2 —
+       * `1.125rem` é `text-xs` (0.75rem, padrão do Tailwind — sem override
+       * de fontSize em `tailwind.config.ts`) × 1.5, não o token
+       * `--luna-step--1` (0.8125rem, usado nos links da nav em
+       * `app/(site)/v2/page.tsx`). Os dois valores não são equivalentes:
+       * amarrar este botão ao token teria trocado a base de 0.75rem para
+       * 0.8125rem antes de multiplicar — mudança de tipografia fora do que
+       * o item 2 pediu. Valor fixo aqui é intencional, não descuido.
+       */
+      className={`inline-flex shrink-0 items-center gap-2 rounded-[var(--luna-radius)] border border-[var(--luna-line-2)] px-3 py-1.5 text-[1.125rem] text-[var(--luna-text-2)] transition-colors hover:border-[var(--luna-line-3)] hover:text-[var(--luna-text)] ${className}`}
     >
       <svg
         viewBox="0 0 24 24"
         aria-hidden="true"
-        className="h-3.5 w-3.5"
+        className="h-5 w-5"
         fill="none"
         stroke="currentColor"
         strokeWidth="1.8"

@@ -47,7 +47,7 @@ export default function SiteV2Page() {
               <Link
                 key={item.href}
                 href={item.href}
-                className="text-[length:var(--luna-step--1)] text-[var(--luna-text-2)] transition-colors hover:text-[var(--luna-text)]"
+                className="text-[length:calc(var(--luna-step--1)*1.5)] text-[var(--luna-text-2)] transition-colors hover:text-[var(--luna-text)]"
               >
                 {item.label}
               </Link>
